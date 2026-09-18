@@ -12,7 +12,7 @@ This repository is an independent implementation of that missing half: a scripte
 simulator and CPU ray tracer that compile a scene into conditions in the released format,
 which MiniMax-H3 accepts unmodified.
 
-**484 frames in 7 seconds, on CPU, in NumPy. No weights, no GPU, no CUDA.**
+**A 484-frame take in about 25 seconds, on CPU, in NumPy. No weights, no GPU, no CUDA.**
 
 ---
 
@@ -46,19 +46,26 @@ primitive ranking from a single view, which scores `Plane` as the best model of 
 
 ```bash
 git clone https://github.com/<you>/cwm-proxy && cd cwm-proxy
-pip install numpy pillow          # that is the entire dependency list
+pip install numpy pillow          # everything below needs only these two
 python take_actions.py out/my_take
 ```
 
 That writes `out/my_take/conditions/` (484 frames of `*.depth.f32` + `*.semantic_id.png`) and
-`out/my_take/prompts/` (one caption per 124-frame window), then validates both. On 100 cores it
-takes about 7 seconds; on one core, a few minutes.
+`out/my_take/prompts/` (one caption per 124-frame window), and checks the invariants and the
+captions as it goes.
+
+It takes about 25 seconds. Note that throwing cores at it does not help — measured on one take,
+8 workers 24 s, 32 workers 28 s, 100 workers 42 s, 200 workers 75 s. The ray tracing is not the
+bottleneck; the serial simulation ahead of it is. Set `CWM_WORKERS` accordingly.
 
 ```bash
 python validate_conditions.py out/my_take/conditions   # independent cold re-read
 python test_actions.py                                 # 11 scenario tests
 python test_cull.py                                    # renderer invariants
 ```
+
+(The one exception is `adherence_sheet.py`, which overlays proxy class boxes on rendered video
+and needs PyAV. Nothing on the path above imports it.)
 
 ---
 
@@ -79,7 +86,12 @@ The focal length is measured, not assumed. (206 px is also exactly a 50.0° vert
 view: 96/tan 25° = 205.87. Offered as a hypothesis about where the number came from, not a
 finding.) Pitch and camera height are **not** fixed: they vary per example and within a take —
 camera height ranges from 1.6 m to 231 m across the 40, and one example's horizon moves 100 rows
-in 124 frames. There is no single rig to recover. We recovered it from the released depth maps with an
+in 124 frames. There is no single rig to recover.
+
+**A known inconsistency:** `Camera.focal_px` defaults to 206.0, but the bundled street scene
+(`StreetSpec.focal_px`) ships at 202.0, so our own takes — including the comparison figures below
+— render at 202. Both sit inside the measured IQR, but if you are matching the released format
+exactly, set it to 206. We recovered it from the released depth maps with an
 estimator validated against known-answer synthetic data before use, cross-checked by a second
 independent mechanism: **206.6 px, IQR [204, 207] across 97 estimates.**
 
@@ -239,12 +251,18 @@ Named, because you will hit them:
 ## Repository layout
 
 ```
-compiler/      ray tracer, camera, primitives, DUV encoding
-world/         entities, rules, actions, invariants, caption compiler
-inverse/       inverse-rendering probe and its findings
-portb/         MiniMax-H3 driver, multi-window takes, retake continuity
-take_actions.py    a complete 484-frame scripted take
-test_*.py      scenario, renderer and caption tests
+compiler/               ray tracer, camera, primitives, DUV encoding, rig
+world/                  entities, rules, actions, invariants, caption compiler
+probe/                  geometry and estimator helpers used by compiler/roundtrip.py
+inverse/                inverse-rendering probe, its 25 scripts and its findings
+portb/                  MiniMax-H3 driver and multi-window retake continuity
+docs/                   the six comparison figures
+examples/               where to get the released 40 (not vendored)
+take_actions.py         a complete 484-frame scripted take
+validate_conditions.py  independent cold re-read of a condition directory
+caption_sync.py         fails a take whose captions disagree with its simulation
+adherence_sheet.py      overlay proxy class boxes on rendered video (needs PyAV)
+test_*.py               scenario, renderer and caption tests
 ```
 
 ---
