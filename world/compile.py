@@ -1,0 +1,273 @@
+"""Compile executable world state into the two channels the video model consumes.
+
+Section 3.2 of the paper: the proxy expresses coarse spatiotemporal state that the
+observation must obey, while text carries identity, appearance and action semantics.
+Both are derived deterministically from the same state -- nothing is invented here.
+"""
+from __future__ import annotations
+
+import zlib
+
+import numpy as np
+
+from compiler.caption import Caption, WINDOW_SECONDS
+from compiler.render import (Box, Capsule, Plane, Rect, Sphere, SphereCluster,
+                             vegetation_clump, wireframe_box)
+from compiler import rig
+from .state import KIND_TO_CLASS, WorldState
+
+ROAD_LIFT = 0.02      # metres the road surface sits above the ground plane
+
+
+class PrimitiveCache:
+    """Rebuild only the entities whose transform changed.
+
+    Rebuilding every primitive each frame dominated batch generation: a 43-clump scene
+    re-seeds an RNG and allocates ~475 spheres per frame, which cost roughly three times
+    the ray tracing itself. Static scenery and parked vehicles never move, so their
+    primitives are built once and reused.
+    """
+
+    def __init__(self):
+        self._sig: dict[str, tuple] = {}
+        self._prims: dict[str, list] = {}
+
+    @staticmethod
+    def _signature(e) -> tuple:
+        return (round(e.position[0], 4), round(e.position[1], 4), round(e.position[2], 4),
+                round(e.heading_deg, 3), round(float(e.attrs.get("gait_phase", 0.0)), 4),
+                round(float(e.attrs.get("scale", 1.0)), 4), tuple(e.size), e.alive,
+                round(e.speed, 4))
+
+    def build(self, s: WorldState, *, ground_class: int = 0) -> list:
+        out = list(_ground(s, ground_class))
+        live = set()
+        for eid, e in s.entities.items():
+            if not e.alive:
+                continue
+            live.add(eid)
+            sig = self._signature(e)
+            if self._sig.get(eid) != sig:
+                self._sig[eid] = sig
+                self._prims[eid] = _entity_primitives(e)
+            out.extend(self._prims[eid])
+        for dead in set(self._prims) - live:
+            self._prims.pop(dead, None)
+            self._sig.pop(dead, None)
+        return out
+
+
+def _ground(s: WorldState, ground_class: int) -> list:
+    out = [Plane(np.zeros(3), np.array([0.0, -1.0, 0.0]), class_id=ground_class)]
+    road = s.params.get("road")
+    if road:
+        # Top face flush with y = 0, the plane every entity's feet sit on. Centring the
+        # slab at -0.03 with half-height 0.06 lifted its surface 0.09 m above the ground,
+        # which is exactly the 1.83 -> 1.74 m error the camera-height descriptor showed.
+        half = np.array([road["half_width"], 0.06, road["half_length"]])
+        # +Y is DOWN. Centring at +half sinks the slab so its top face sits at y = 0 --
+        # but exactly coplanar with the ground plane, which z-fights: the road broke into
+        # 306 connected components, 297 of them 1-3 px of speckle. Lift it by ROAD_LIFT so
+        # it wins unambiguously. 2 cm is 1% of the camera height, far below the 9 cm error
+        # the original floating slab caused.
+        out.append(Box(np.array([road.get("x", 0.0), half[1] - ROAD_LIFT, road["centre_z"]]),
+                       half, class_id=4))
+    return out
+
+
+def _entity_primitives(e) -> list:
+    """Primitives for one entity, with an optional semantic-class override.
+
+    The override used to apply to props only. It is general because class is about ROLE,
+    not shape: released example 31 has a white stag as its protagonist and still classes it
+    8, so class 8 encodes "the protagonist" rather than "a human". Reproducing that scene
+    needs a quadruped emitting 8.
+    """
+    prims = _entity_shapes(e)
+    cid = e.attrs.get("class_id")
+    if cid is not None:
+        for q in prims:
+            q.class_id = int(cid)
+    return prims
+
+
+def _entity_shapes(e) -> list:
+    p = e.pos.copy()
+    if e.kind == "human":
+        # p[1] is altitude (+Y down), so a rider or a flyer sits above the road. Ground
+        # entities carry p[1] == 0 and are unchanged.
+        return rig.Human(position=np.array([p[0], p[1], p[2]]), facing_deg=e.heading_deg,
+                         pose=rig.walk_pose(e.attrs.get("gait_phase", 0.0), run=e.speed > 2.0),
+                         scale=float(e.attrs.get("scale", 1.0))).primitives()
+    if e.kind == "vehicle":
+        half = np.asarray(e.size, float) / 2.0
+        th = np.radians(e.heading_deg)
+        axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
+        # p[1] is altitude: +Y is down, so a body flying `alt` metres up has p[1] = -alt.
+        # Ground entities carry p[1] == 0 and land exactly where they did before.
+        return wireframe_box([p[0], p[1] - half[1], p[2]], half, axes)
+    if e.kind == "scenery":
+        half = np.asarray(e.size, float) / 2.0
+        th = np.radians(e.heading_deg)
+        axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
+        return [Box(np.array([p[0], p[1] - half[1], p[2]]), half, axes, class_id=0)]
+    if e.kind == "animal":
+        # A quadruped from the same swept-sphere vocabulary as the human rig: barrel body,
+        # four legs, angled neck, head, and a hump that makes the silhouette read as a camel
+        # rather than a horse.
+        L, Hh, Wd = float(e.size[2]), float(e.size[1]), float(e.size[0])
+        th = np.radians(e.heading_deg)
+        fwd = np.array([np.sin(th), 0.0, np.cos(th)])
+        side = np.array([np.cos(th), 0.0, -np.sin(th)])
+        base = np.array([p[0], p[1], p[2]])
+        back = base + np.array([0.0, -Hh * 0.62, 0.0])
+        body_r = Wd * 0.34
+        out = [Capsule(back - fwd * L * 0.28, back + fwd * L * 0.22, body_r, class_id=9),
+               Sphere(back + fwd * L * 0.02 + np.array([0.0, -body_r * 0.85, 0.0]),
+                      body_r * 0.78, class_id=9)]
+        for sx in (-1.0, 1.0):
+            for fz, lean in ((0.20, 0.03), (-0.24, -0.03)):
+                top = back + fwd * L * fz + side * (Wd * 0.28 * sx)
+                out.append(Capsule(top, top + np.array([0.0, Hh * 0.62, 0.0]) + fwd * lean * L,
+                                   body_r * 0.30, class_id=9))
+        neck0 = back + fwd * L * 0.30
+        neck1 = neck0 + fwd * L * 0.16 + np.array([0.0, -Hh * 0.34, 0.0])
+        out.append(Capsule(neck0, neck1, body_r * 0.42, class_id=9))
+        out.append(Sphere(neck1 + fwd * L * 0.07, body_r * 0.40, class_id=9))
+        return out
+    if e.kind == "prop":
+        # A slender shaft along the entity's heading -- the broom.
+        L = float(e.size[2])
+        th = np.radians(e.heading_deg)
+        fwd = np.array([np.sin(th), 0.0, np.cos(th)])
+        c = np.array([p[0], p[1], p[2]])
+        # class 11 was ours alone -- 0 of the released 40 use it. A ridden prop is a
+        # conveyance (class 10 in their vocabulary); anything else falls back to 0.
+        cid = KIND_TO_CLASS["prop"]
+        return [Capsule(c - fwd * L * 0.5, c + fwd * L * 0.5, float(e.size[0]) * 0.5, class_id=cid),
+                SphereCluster(np.stack([c + fwd * L * (0.5 + 0.03 * k)
+                                        + np.array([0.0, 0.02 * ((k % 3) - 1), 0.0]) for k in range(6)]),
+                              float(e.size[0]) * 0.9, class_id=cid)]
+    if e.kind == "water":
+        # size is (width, _, length); position is the centre of the sheet. The y of the
+        # entity is the surface height, so a scene can sink a canal or raise a flooded
+        # terrace without a new kind.
+        # Tiled along Z rather than emitted as one long sheet. The screen-space cull works
+        # on a bounding sphere, and a single 11 x 440 m terrace has a ~220 m radius that no
+        # frame can reject. Measured, tiling changes nothing at this scale (a back-to-back
+        # A/B put water's whole effect on take wall time inside run-to-run variance:
+        # dry 23.8/17.0 s against wet 19.1/19.3 s). It is kept because the loose bound is a
+        # property of the shape, not of this scene, and a longer river would feel it.
+        w, L = float(e.size[0]), float(e.size[2])
+        cid = KIND_TO_CLASS["water"]
+        n = max(1, int(round(L / 40.0)))
+        step = L / n
+        z0 = p[2] - L / 2.0
+        return [Rect(y=float(p[1]), x0=p[0] - w / 2.0, x1=p[0] + w / 2.0,
+                     z0=z0 + step * k, z1=z0 + step * (k + 1), class_id=cid)
+                for k in range(n)]
+    if e.kind == "vegetation":
+        return vegetation_clump([p[0], p[1] - e.size[1] / 2.0, p[2]], e.size[0] / 2.0,
+                                aspect=float(e.size[1] / max(e.size[0], 1e-6)),
+                                seed=_stable_seed(e.eid))
+    return []
+
+
+def _stable_seed(eid: str) -> int:
+    """Deterministic across processes. Python's hash() is salted per interpreter, so it
+    made every rendered frame differ run to run, while the determinism check -- which
+    compared only the state JSON -- kept passing."""
+    return zlib.crc32(eid.encode("utf-8")) % 10_000
+
+
+def primitives(s: WorldState, *, ground_class: int = 0) -> list:
+    """World state -> proxy primitives, using the vocabulary measured in SPEC 5.
+
+    The ground defaults to void_unknown, not road_paved. SPEC section 4 measured
+    road_paved at 10.0% mean over the released takes while void_unknown holds 58.9%:
+    most of their ground is unlabelled geometry, and a road is a strip laid on it.
+    Painting the whole ground plane as road pushes road_frac to 0.75+, far outside
+    the released range.
+    """
+    out = [Plane(np.zeros(3), np.array([0.0, -1.0, 0.0]), class_id=ground_class)]
+    road = s.params.get("road")
+    if road:
+        half = np.array([road["half_width"], 0.06, road["half_length"]])
+        out.append(Box(np.array([road.get("x", 0.0), -0.03, road["centre_z"]]), half,
+                       class_id=4))
+    for e in s.entities.values():
+        if not e.alive:
+            continue
+        p = e.pos.copy()
+        if e.kind == "human":
+            phase = e.attrs.get("gait_phase", 0.0)
+            out += rig.Human(position=np.array([p[0], 0.0, p[2]]), facing_deg=e.heading_deg,
+                             pose=rig.walk_pose(phase, run=e.speed > 2.0),
+                             scale=float(e.attrs.get("scale", 1.0))).primitives()
+        elif e.kind == "vehicle":
+            half = np.asarray(e.size, float) / 2.0
+            th = np.radians(e.heading_deg)
+            axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
+            out += wireframe_box([p[0], -half[1], p[2]], half, axes)
+        elif e.kind == "scenery":
+            # Buildings and terrain masses. SPEC section 4: the released proxies never use
+            # building_structure (6) or terrain (3) -- every such mass is void_unknown (0),
+            # which is the dominant class at 58.9% and carries valid depth.
+            half = np.asarray(e.size, float) / 2.0
+            th = np.radians(e.heading_deg)
+            axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
+            out.append(Box(np.array([p[0], -half[1], p[2]]), half, axes, class_id=0))
+        elif e.kind == "vegetation":
+            out += vegetation_clump([p[0], -e.size[1] / 2.0, p[2]], e.size[0] / 2.0,
+                                    aspect=float(e.size[1] / max(e.size[0], 1e-6)),
+                                    seed=_stable_seed(e.eid))
+    return out
+
+
+def advance_gait(s: WorldState) -> None:
+    """Keep each walker's gait phase in step with the distance it actually covered."""
+    for e in s.of_kind("human"):
+        stride = s.params.get("stride_m", 1.5)
+        e.attrs["gait_phase"] = float(e.attrs.get("gait_phase", 0.0)) + e.speed * s.dt / stride
+
+
+def caption_for(s: WorldState, appearance: dict, actions: list[str],
+                *, continuation: bool) -> Caption:
+    """Assemble one window's caption. Prose comes from the agent; timing comes from state."""
+    protagonist = appearance["protagonist"]
+    if continuation:
+        protagonist = "Continuing without a cut, " + protagonist[0].lower() + protagonist[1:]
+    others = describe_others(s)
+    return Caption(protagonist=protagonist, scene=appearance["scene"], actions=actions,
+                   held_objects=appearance.get("held_objects", ""),
+                   other_actors_appearance=appearance.get("other_actors_appearance", ""),
+                   other_actors=others)
+
+
+def describe_others(s: WorldState, hero: str = "courier") -> str:
+    """Timeline entry for non-protagonists, split in half like the released captions."""
+    movers = [e for e in s.entities.values()
+              if e.alive and e.eid != hero and e.kind in ("human", "vehicle", "animal") and e.speed]
+    statics = [e for e in s.entities.values()
+               if e.alive and e.eid != hero and e.kind == "vehicle" and not e.speed]
+    half = round(WINDOW_SECONDS / 2, 2)
+    dash = "\u2013"
+    parts = []
+    if movers:
+        parts.append(
+            f"0.00{dash}{half:.2f}s, {len(movers)} other moving actors: they hold their own lines "
+            f"along the street at a steady, unhurried pace, neither converging on the protagonist "
+            f"nor reacting to her passage; their spacing relative to one another stays roughly "
+            f"constant and none of them changes direction within the window.")
+    if statics:
+        parts.append(
+            f"{(half if movers else 0.0):.2f}{dash}{WINDOW_SECONDS:.2f}s, {len(statics)} parked "
+            f"vehicles: they remain stationary along the kerb with no motion of their own, their "
+            f"wheels still and their bodies square to the roadway, passing out of frame behind the "
+            f"protagonist one after another as she advances down the street.")
+    if not parts:
+        return (f"0.00{dash}{WINDOW_SECONDS:.2f}s, no other visible actors: the protagonist remains "
+                f"alone throughout, with only ambient environmental motion in the vegetation and "
+                f"suspended dust, and no other person, creature, craft, or independently moving "
+                f"identity enters the frame at any point in the window.")
+    return " ".join(parts)

@@ -1,0 +1,32 @@
+cwm-proxy
+Copyright 2026 the cwm-proxy authors
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. You may obtain a copy of the
+License at http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+
+This product includes material derived from Code World Model
+(https://github.com/buaacyw/code-world-model), Copyright the Code World Model
+authors, licensed under the Apache License, Version 2.0.
+
+Specifically:
+
+1. The condition format implemented in compiler/render.py -- resolution, metric
+   first-surface depth, the 0.3 m / 256 m log endpoints, the 2x2 resample, and
+   the 0-11 semantic ontology -- was derived by measurement from that project's
+   released example conditions and their metadata.json.
+
+2. Scene prose in world/take_content.py derives from that project's released
+   prompt files. The longest verbatim run is 12 words.
+
+3. The six comparison figures under docs/ display that project's released
+   conditions and frames generated from them, alongside our own, for the purpose
+   of comparison.
+
+No source code from that project is included in this repository.
+
+Paper: Code World Model: Coding Agent as World Brain
+       Yiwen Chen, Guosheng Lin, Chi Zhang
+       arXiv:2608.25927
