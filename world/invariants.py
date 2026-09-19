@@ -127,7 +127,17 @@ class Invariants:
                 continue
             bb = screen_bbox(cam, e.pos + np.array([0.0, -float(e.size[1]) / 2.0, 0.0]),
                              float(max(e.size)) / 2.0, 336, 192)
-            if bb:
+            # screen_bbox has THREE outcomes and only one of them means "not in shot":
+            #   ()    dead or wholly offscreen        -> not visible
+            #   None  sphere straddles the eye plane  -> the lens is inside the body, so
+            #         it is maximally visible and cannot be bounded
+            #   tuple its pixel extent                -> visible
+            # `if bb:` scored None as invisible, i.e. the one case meaning "this fills the
+            # frame" counted the same as "this is not there". On the shipped take the taxi
+            # at f132 covers 11.4% of the frame and was reported not visible; taxi read 73%
+            # and gunship 79% where both are really 100%. It passed only because 73 and 79
+            # clear the 60% default, so the margin was quietly being spent.
+            if bb is None or bb:
                 self._seen_visible[eid] = self._seen_visible.get(eid, 0) + 1
 
     # -- reporting ----------------------------------------------------------
