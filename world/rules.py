@@ -13,22 +13,58 @@ import numpy as np
 from .state import Entity, WorldState
 
 Rule = Callable[[WorldState], None]
-_REGISTRY: dict[str, Rule] = {}
+
+# The rules defined in this module, by the decorator, at import. Written once and never
+# again: a take's own rules go in its RuleSet, not here.
+#
+# This used to be one mutable module-level dict that `agent.AddRule` wrote into, so it
+# outlived the take that created it. A second simulate() in the same process started from
+# `sorted(rules.names())` -- by then 14 entries rather than 4 -- and activated every rule
+# the FIRST take had added, from frame 0, before the entities they reference existed. The
+# flight rule fired immediately and the protagonist spent the whole take 14 m up.
+_BUILTIN: dict[str, Rule] = {}
 
 
 def rule(name: str):
     def deco(fn: Rule) -> Rule:
-        _REGISTRY[name] = fn
+        _BUILTIN[name] = fn
         return fn
     return deco
 
 
+class RuleSet:
+    """The rules available to ONE take: the builtins, plus whatever its agent adds.
+
+    Takes get one of these instead of sharing module state, so nothing a take does can
+    reach the next one.
+    """
+
+    def __init__(self, base: dict[str, Rule] | None = None) -> None:
+        self._r = dict(_BUILTIN if base is None else base)
+
+    def add(self, name: str, fn: Rule) -> None:
+        self._r[name] = fn
+
+    def get(self, name: str) -> Rule:
+        return self._r[name]
+
+    def names(self) -> list[str]:
+        return sorted(self._r)
+
+    def step(self, s: WorldState, active: list[str]) -> None:
+        """One tick: run the named rules in order, then advance time."""
+        for name in active:
+            self._r[name](s)
+        s.t = round(s.t + s.dt, 6)
+
+
 def get(name: str) -> Rule:
-    return _REGISTRY[name]
+    return _BUILTIN[name]
 
 
 def names() -> list[str]:
-    return sorted(_REGISTRY)
+    """The builtin rules. A take should ask its own RuleSet, not this."""
+    return sorted(_BUILTIN)
 
 
 @rule("locomotion")
@@ -100,9 +136,9 @@ def fatigue(s: WorldState) -> None:
 
 
 def step(s: WorldState, active: list[str]) -> None:
-    """One tick: run the named rules in order, then advance time."""
+    """One tick over the BUILTIN rules, for scenes that never add any."""
     for name in active:
-        _REGISTRY[name](s)
+        _BUILTIN[name](s)
     s.t = round(s.t + s.dt, 6)
 
 

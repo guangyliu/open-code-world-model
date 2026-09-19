@@ -121,7 +121,10 @@ def script():
 
 def simulate(check: bool = True):
     s, ctl, _ = street_take()
-    active = list(rules.names())
+    # One rule set per take. Seeded from the builtins only, so a previous take in this
+    # process cannot put anything in it.
+    ruleset = rules.RuleSet()
+    active = ruleset.names()
     S, _ = script()
     inv = Invariants()
     # What must be seen, and when. `visible` covers elevation *and* bearing: an aircraft at the
@@ -137,8 +140,8 @@ def simulate(check: bool = True):
     plan = []
     for k in range(FRAMES):
         if k in S:
-            active = ag.apply(s, S[k], active)
-        rules.step(s, active)
+            active = ag.apply(s, S[k], active, ruleset)
+        ruleset.step(s, active)
         wc.advance_gait(s)
         h = s.get("courier")
         cam = ctl.update(h.pos, h.heading_deg, 1.0 / FPS)
