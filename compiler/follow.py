@@ -38,15 +38,26 @@ class FollowCamera:
     # This rotates the optical axis; `shoulder_offset` moves the camera body and the aim
     # then cancels it, which is why it never changed the screen position.
     aim_screen_x: float = 0.5
-    # The vertical twin. 0.5 is the boom's own fixed point; larger puts the subject lower.
-    # Like aim_screen_x this rotates the optical axis and leaves `aim_height` -- the point
-    # on the subject being looked at -- alone. Using aim_height for placement instead is
-    # what pinned the pitch at its clamp for whole windows.
+    # The vertical twin: it rotates the optical axis and leaves `aim_height` alone. Using
+    # aim_height for placement instead is what pinned the pitch at its clamp for whole
+    # windows.
+    #
+    # It places the AIM POINT, not the subject's silhouette, and the two are only the same
+    # thing when `aim_height` is the subject's mid-height. Measured on a 1.75 m figure at
+    # aim_screen_y = 2/3: with aim_height 1.20 the aim point lands at 0.667 as asked, but
+    # the body centre lands at 0.880 and the feet at 1.332, i.e. below the frame. With
+    # aim_height 0.875, half the figure, the body centre lands at 0.667. So a scene that
+    # wants the SUBJECT at a screen position must aim at the middle of it.
     aim_screen_y: float = 0.5
     boom_tau: float = 0.55
     aim_tau: float = 0.12
     zeta: float = 0.55          # boom damping ratio; < 1 overshoots, 1 is critical
-    aim_height: float = 1.20    # metres above the subject's feet that the camera looks at
+    # Metres above the subject's feet that the camera LOOKS AT. This is a world-space aim
+    # point, NOT a screen-placement control, and it is easy to reach for as though it were
+    # one. It runs backwards if you do: dragging the aim point down pitches the lens down,
+    # which moves the subject UP the frame (aim 1.20 -> subject y 0.624, aim 0.55 -> 0.357,
+    # aim 0.00 -> 0.239) and then pins the clamp. Use `aim_screen_y` for placement.
+    aim_height: float = 1.20
     pitch_min: float = -35.0    # clamp on the optical axis; +ve is up, and it must be
     pitch_max: float = 35.0     # able to go up or a climbing subject leaves the frame
     # Vertical response to a climbing subject. At the defaults (rise_gain 1, pull_back 0)
