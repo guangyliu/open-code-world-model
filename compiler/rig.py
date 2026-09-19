@@ -75,6 +75,9 @@ class Pose:
     l_elbow: float = 0.0
     r_elbow: float = 0.0
     lean: float = 0.0
+    # Metres the pelvis sinks. A knee bend with the soles planted has to lower the body by
+    # exactly the height the bend takes out of the leg, or the feet leave the ground.
+    pelvis_drop: float = 0.0
 
 
 def walk_pose(phase: float, *, stride_deg: float = 32.0, run: bool = False) -> Pose:
@@ -107,9 +110,17 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 #
 # The kind comes from ex36's timeline: the subject "remains planted ... without stepping,
 # feet fixed" while she "subtly turns her head and upper chest toward her right" and "her
-# right hand swings a short distance beside her thigh". So it is a torso turn, an arm
-# swing and a breathing sway, with the hips and knees pinned at zero -- that is what "feet
-# fixed" means, and it is why this is a separate channel from the gait.
+# right hand swings a short distance beside her thigh", she "continues standing in place
+# with a mild sway through the waist", and she "makes a small balance adjustment through
+# her hips and knees without stepping". So it is a torso turn, an arm swing, a sway and a
+# hip/knee adjustment -- four channels, all named, and separate from the gait because none
+# of them covers ground.
+#
+# The hips and knees were pinned at zero here, justified as "what 'feet fixed' means".
+# That conflated two constraints the prompt keeps apart: "feet fixed" and "without
+# stepping" constrain the FEET, while the hips and knees are named as the things that
+# move. The invariant is that the soles do not travel, not that the joints read zero --
+# see `knee_bend_drop`.
 #
 # The scale comes from the same clause, read at the landmark the words name. "A short
 # distance beside her thigh" is a statement about the HAND, so it is checked at the
@@ -134,9 +145,12 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # than closed: it lands at 26 px/frame against their 47. That gap is real and is not
 # something to spend amplitude on.
 #
-# IDLE_SWAY_DEG is the exception and is flagged rather than claimed. The clause describes a
-# head/chest turn and a hand swing; it says nothing about a breathing sway, so there is no
-# phrase to read this off. It is also the constant that decides whether ex36 clears the
+# IDLE_SWAY_DEG is the exception, though less of one than this comment used to claim. The
+# channel IS named -- "She continues standing in place with a mild sway through the waist"
+# -- so "breathing sway" was our word for something the prompt describes. What has no
+# anchor is the MAGNITUDE: "mild" does not fix 3.0 degrees any more than it fixes 1.5, and
+# the rig has no waist joint, so this is a whole-body lean standing in for a waist bend.
+# It is also the constant that decides whether ex36 clears the
 # articulation floor at all:
 #
 #     turn 6 / swing 8 / sway 1.5  ->  19 px/frame   FAILS the 20 px floor
@@ -158,6 +172,21 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 IDLE_TURN_DEG = 6.0
 IDLE_SWING_DEG = 8.0
 IDLE_SWAY_DEG = 3.0
+# "a small balance adjustment through her hips and knees without stepping".
+IDLE_KNEE_DEG = 6.0
+
+
+def knee_bend_drop(knee_deg: float, h: float = HEIGHT) -> float:
+    """Metres the pelvis must sink so a symmetric knee bend leaves the soles planted.
+
+    The thigh and shin are the same length s, so driving hip = -knee/2 against knee keeps
+    the foot on the vertical through the hip root -- the two segment rotations cancel in z
+    -- and shortens the leg from 2s to 2s*cos(knee/2). Sinking the pelvis by the difference
+    puts the sole back exactly where it was. Closed form, so "without stepping" holds by
+    construction rather than by tuning.
+    """
+    s_len = 0.26 * h
+    return 2.0 * s_len * (1.0 - float(np.cos(np.radians(knee_deg / 2.0))))
 
 
 def idle_pose(phase: float) -> Pose:
@@ -169,8 +198,15 @@ def idle_pose(phase: float) -> Pose:
     """
     s = np.sin(2 * np.pi * phase)
     c = np.cos(2 * np.pi * phase)
+    # "a small balance adjustment through her hips and knees without stepping": the knees
+    # flex on their own slower beat, the hips take half the angle back so the shins stay
+    # vertical, and the pelvis sinks by exactly what the bend removes from the leg.
+    knee = IDLE_KNEE_DEG * 0.5 * (1.0 - np.cos(4 * np.pi * phase))
     return Pose(l_shoulder=-IDLE_SWING_DEG * s, r_shoulder=IDLE_SWING_DEG * s,
-                l_elbow=12.0, r_elbow=12.0, lean=2.0 + IDLE_SWAY_DEG * c)
+                l_elbow=12.0, r_elbow=12.0,
+                l_hip=-knee / 2.0, r_hip=-knee / 2.0, l_knee=knee, r_knee=knee,
+                pelvis_drop=knee_bend_drop(knee),
+                lean=2.0 + IDLE_SWAY_DEG * c)
 
 
 def idle_turn(phase: float) -> float:
@@ -194,6 +230,9 @@ class Human:
         # band) and ~0.24 (arms inside it), and released sits at 0.214, so the released
         # rig has the arms partly in the band.
         hip_y, shoulder_y, head_y = 0.53 * h, SHOULDER_FRAC * h, 0.93 * h
+        # The whole upper body sinks together; only the feet stay put.
+        drop = float(self.pose.pelvis_drop) * self.scale
+        hip_y, shoulder_y, head_y = hip_y - drop, shoulder_y - drop, head_y - drop
         hip_dx, sh_dx = 0.085 * h, 0.115 * h
         thigh, shin = 0.26 * h, 0.26 * h
         uarm, farm = 0.175 * h, 0.16 * h

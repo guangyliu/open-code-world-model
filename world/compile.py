@@ -214,6 +214,12 @@ def _stable_seed(eid: str) -> int:
 # One slow idle cycle per four seconds. The window is 124 frames at 24 fps, so a planted
 # subject moves through a little over one cycle -- continuous motion rather than a loop the
 # viewer can count.
+#
+# Recorded, not acted on: three of their five planted windows never repeat a frame at all,
+# where ours repeats once (frames 96-123 duplicate 0-27, which is why ex36 renders 96
+# distinct frames rather than 124). A real divergence, but not a rule -- their ex37 repeats
+# at 52 frames. An aperiodic idle, drifting the phase or running two incommensurate beats,
+# would close it and is a change for its own day.
 IDLE_HZ = 0.25
 
 

@@ -2010,6 +2010,97 @@ def t_idle_amplitude_follows_the_clause():
     return ok
 
 
+def t_idle_adjusts_hips_and_knees_with_feet_planted():
+    """The prompt names a hip and knee adjustment. We pinned both at exactly zero.
+
+    The justification given was that zeroed hips and knees are "what 'feet fixed' means".
+    Read against ex36's own wording, that conflates two different constraints:
+
+        "Keeping her feet FIXED below the lower edge, she subtly turns her head and
+         upper chest toward her right"
+        "She makes a small balance adjustment THROUGH HER HIPS AND KNEES without
+         stepping, allowing her right shoulder to settle slightly lower"
+
+    "Feet fixed" and "without stepping" constrain the FEET. The hips and knees are named
+    as the things that move. So the invariant is not "the joint angles are zero", it is
+    "the feet do not travel", and those are different: a balance adjustment bends the knees
+    while the soles stay where they are.
+
+    Both halves are asserted here, because either alone is satisfiable by something wrong.
+    Angles varying with the feet free would be a step; feet planted with the angles pinned
+    is what we shipped.
+    """
+    import numpy as np
+
+    from compiler import rig
+
+    ok = True
+    n = 49
+    poses = [rig.idle_pose(i / (n - 1.0)) for i in range(n)]
+
+    # 1. The clause: hips and knees must actually adjust.
+    for joint in ("l_hip", "r_hip", "l_knee", "r_knee"):
+        vals = [getattr(q, joint) for q in poses]
+        if max(vals) - min(vals) < 1e-9:
+            print(f"     {joint} is pinned at {vals[0]:.6f} across the idle cycle, but the "
+                  f"prompt describes a balance adjustment through the hips and knees")
+            ok = False
+
+    # 2. The real constraint: the soles must not travel. The foot is the far end of the
+    #    leg chain, so it is identified as the lowest point of the rig, by construction.
+    feet = []
+    for q in poses:
+        pts = []
+        for prim in rig.Human(position=np.zeros(3), facing_deg=0.0, pose=q).primitives():
+            for a in ("a", "b", "centre"):
+                v = getattr(prim, a, None)
+                if v is not None:
+                    pts.append(np.asarray(v, float))
+        pts = np.array(pts)
+        feet.append(pts[np.argmax(pts[:, 1])])      # +Y is down, so max Y is lowest
+    feet = np.stack(feet)
+    travel = float(np.linalg.norm(feet.max(0) - feet.min(0)))
+    if travel > 0.002:
+        print(f"     the foot travels {100 * travel:.2f} cm over the idle cycle; a balance "
+              f"adjustment without stepping must leave the soles where they are")
+        ok = False
+
+    # 3. The negative: the planted foot depends on knee = -2 x hip, because the thigh and
+    #    shin are equal and only that ratio cancels both segment rotations. A test that
+    #    merely watches the shipped pose would pass any relation, so a wrong one is staged
+    #    here and must be caught. Measured: hip 5 alone moves the foot 7.25 cm, hip 5 with
+    #    knee -5 moves it 3.63 cm, and hip 5 with knee -10 moves it not at all.
+    def foot_travel(ratio):
+        out = []
+        for i in range(n):
+            k = rig.IDLE_KNEE_DEG * 0.5 * (1.0 - np.cos(4 * np.pi * i / (n - 1.0)))
+            q = rig.Pose(l_hip=-k / 2.0, r_hip=-k / 2.0,
+                         l_knee=k * ratio, r_knee=k * ratio,
+                         pelvis_drop=rig.knee_bend_drop(k))
+            pts = []
+            for prim in rig.Human(position=np.zeros(3), facing_deg=0.0,
+                                  pose=q).primitives():
+                for a in ("a", "b", "centre"):
+                    v = getattr(prim, a, None)
+                    if v is not None:
+                        pts.append(np.asarray(v, float))
+            pts = np.array(pts)
+            out.append(pts[np.argmax(pts[:, 1])])
+        out = np.stack(out)
+        return float(np.linalg.norm(out.max(0) - out.min(0)))
+
+    bad = foot_travel(0.5)          # knee = -1 x hip, the plausible wrong relation
+    if bad <= 0.002:
+        print(f"     a wrong hip/knee relation still kept the foot within "
+              f"{1000 * bad:.2f} mm; the test cannot tell a planted foot from a stepping one")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] idle_adjusts_hips_and_knees_with_feet_planted "
+          f"(knee range {max(q.l_knee for q in poses) - min(q.l_knee for q in poses):.1f} deg, "
+          f"foot travel {1000 * travel:.2f} mm, wrong relation {1000 * bad:.1f} mm)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -2024,7 +2115,8 @@ if __name__ == "__main__":
              t_framed_holds_the_opening_layout,
              t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y,
              t_articulation_covers_animals_and_planted_subjects,
-             t_idle_amplitude_follows_the_clause]
+             t_idle_amplitude_follows_the_clause,
+             t_idle_adjusts_hips_and_knees_with_feet_planted]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
