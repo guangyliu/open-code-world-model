@@ -493,6 +493,30 @@ def t_camera_modes():
         print("     hold did not let the subject recede from the camera")
         ok = False
 
+    # lock: body AND aim frozen, so the subject drifts out of centre. `hold` does not do
+    # this -- it keeps aiming, which is why driving ex28's "preserving the exact initial
+    # layout" from hold left its centroid at 0.495, exactly the symptom being fixed.
+    from compiler.render import OUT_W
+    lk = FollowCamera(distance=2.40, height=1.83, mode="lock")
+    hd = FollowCamera(distance=2.40, height=1.83, mode="hold")
+    lx, hx = [], []
+    for k in range(96):
+        # The subject must move ACROSS the frame, not straight down the optical axis: a
+        # locked camera watching someone recede sees them shrink without shifting, so a
+        # straight-ahead walk cannot distinguish lock from hold at all.
+        tgt = np.array([2.2 * k * dt, 0.0, 2.5 * k * dt])
+        for cam, acc in ((lk, lx), (hd, hx)):
+            c = cam.update(tgt, 0.0, dt)
+            cp = c.to_camera(tgt + np.array([0.0, -1.0, 0.0]))[0]
+            if cp[2] > 0:
+                acc.append(float(cp[0] / cp[2] * c.focal_px + OUT_W / 2) / OUT_W)
+    if abs(lx[-1] - 0.5) < 0.05:
+        print(f"     lock kept the subject centred at {lx[-1]:.3f}; the aim is not frozen")
+        ok = False
+    if abs(hx[-1] - 0.5) > 0.05:
+        print(f"     hold let the subject leave centre at {hx[-1]:.3f}; it should keep aiming")
+        ok = False
+
     # orbit: the boom's bearing around the subject sweeps.
     o = run("orbit", orbit_rate=30.0)
     def bearing(rec):
@@ -517,8 +541,121 @@ def t_camera_modes():
         ok = False
 
     print(f"[{'PASS' if ok else 'FAIL'}] camera_modes "
-          f"(hold fixed, orbit {swept:.0f} deg, push {pu[0][1]:.1f}->{pu[-1][1]:.1f} m, "
+          f"(hold fixed and still centred {hx[-1]:.2f}, lock drifts to {lx[-1]:.2f}, "
+          f"orbit {swept:.0f} deg, push {pu[0][1]:.1f}->{pu[-1][1]:.1f} m, "
           f"pull {pl[0][1]:.1f}->{pl[-1][1]:.1f} m)")
+    return ok
+
+
+def t_aim_screen_x():
+    """The rig must put the subject where it is told, not always at frame centre.
+
+    Our six reproduced proxies sat at horizontal centroid 0.49-0.50 with near-zero variance
+    while the released six span 0.350-0.499. That is not a tuning error: a follow boom
+    solves one constraint, keep the subject projected at centre, and 0.49 is its fixed
+    point. `shoulder_offset` cannot fix it -- it moves the camera body and the aim rotates
+    straight back onto the subject.
+    """
+    import numpy as np
+
+    from compiler.follow import FollowCamera
+    from compiler.render import OUT_W
+
+    ok = True
+
+    def landed(fx):
+        cam = FollowCamera(distance=2.4, height=1.7, aim_screen_x=fx)
+        for k in range(60):
+            c = cam.update(np.array([0.0, 0.0, 2.0 * k / FPS]), 0.0, 1.0 / FPS)
+        tgt = np.array([0.0, -1.0, 2.0 * 59 / FPS])
+        cp = c.to_camera(tgt)[0]
+        return float(cp[0] / cp[2] * c.focal_px + OUT_W / 2) / OUT_W
+
+    for fx in (0.5, 1.0 / 3.0, 2.0 / 3.0, 0.25):
+        got = landed(fx)
+        if abs(got - fx) > 0.02:
+            print("     asked for %.3f, subject landed at %.3f" % (fx, got))
+            ok = False
+
+    # Negative: the default rig centres the subject, so if the offset is ever dropped every
+    # request collapses to 0.5 and this separation disappears.
+    spread = abs(landed(1.0 / 3.0) - landed(2.0 / 3.0))
+    if spread < 0.25:
+        print("     left and right framings differ by only %.3f; the offset is not applied"
+              % spread)
+        ok = False
+
+    print("     1/3 -> %.3f, centre -> %.3f, 2/3 -> %.3f"
+          % (landed(1.0 / 3.0), landed(0.5), landed(2.0 / 3.0)))
+    print(f"[{'PASS' if ok else 'FAIL'}] aim_screen_x")
+    return ok
+
+
+def t_shot_parse():
+    """The shot clause must be read from the prompt, and read the same way for all 40.
+
+    Guards against the failure this replaces: the scene author ignored the shot clause
+    entirely, so every example got the same framing. It also guards the opposite failure --
+    a parser tuned until the six figures look right. The coverage assertions below are over
+    the whole release, so a pattern that only fires on the six would fail them.
+    """
+    import os
+
+    from world.shot import CENTRE, THIRD_LEFT, parse_shot
+
+    ok = True
+    root = os.environ.get("CWM_EXAMPLES", "examples40")
+    if not os.path.isdir(root):
+        print("     released examples not present (set CWM_EXAMPLES); parser checked on "
+              "synthetic text only")
+        synthetic = [
+            ("The trailing camera begins near shoulder height behind her, holding the "
+             "opening layout with the two rovers visible.", dict(hold=True)),
+            ("She stands left of center with her back to the camera. The camera begins "
+             "close behind her.", dict(subject_x=THIRD_LEFT)),
+            ("The camera begins behind the sentinel in a steep downward-looking aerial "
+             "view, with the sentinel centered prominently.",
+             dict(subject_x=CENTRE, aerial=True)),
+        ]
+        for text, want in synthetic:
+            sh = parse_shot(text)
+            for k, v in want.items():
+                if getattr(sh, k) != v:
+                    print("     %r -> %s=%r, wanted %r" % (text[:40], k, getattr(sh, k), v))
+                    ok = False
+        print(f"[{'PASS' if ok else 'FAIL'}] shot_parse (synthetic only)")
+        return ok
+
+    exs = sorted(int(d) for d in os.listdir(root) if d.isdigit())
+    shots = {}
+    for ex in exs:
+        f = os.path.join(root, str(ex), "prompts", "000.txt")
+        with open(f, encoding="utf-8") as fh:
+            shots[ex] = parse_shot(fh.read())
+
+    # Every released prompt has the camera sentence the parse anchors on.
+    no_cam = [ex for ex in exs if not shots[ex].source]
+    if no_cam:
+        print("     no camera sentence found in %s" % no_cam[:6])
+        ok = False
+
+    # Placement is the dominant signal and must parse for most of the release, not just
+    # for the examples in the figures.
+    n_place = sum(1 for ex in exs if shots[ex].subject_x is not None)
+    if n_place < len(exs) // 2:
+        print("     subject placement parsed for only %d/%d" % (n_place, len(exs)))
+        ok = False
+
+    # And it must not collapse to one value, or it is not reading anything.
+    vals = {shots[ex].subject_x for ex in exs if shots[ex].subject_x is not None}
+    if len(vals) < 2:
+        print("     every placement parsed to the same value %r" % vals)
+        ok = False
+
+    n_hold = sum(1 for ex in exs if shots[ex].hold)
+    print("     %d/%d placement, %d/%d hold, %d distinct placements"
+          % (n_place, len(exs), n_hold, len(exs), len(vals)))
+    print(f"[{'PASS' if ok else 'FAIL'}] shot_parse")
     return ok
 
 
@@ -527,7 +664,8 @@ if __name__ == "__main__":
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
              t_fly_on_prop, t_descend_and_ballistic, t_flight_camera,
              t_caption_compiler, t_actor_captions,
-             t_water_surface, t_class_vocabulary, t_camera_modes]
+             t_water_surface, t_class_vocabulary, t_camera_modes,
+             t_aim_screen_x, t_shot_parse]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

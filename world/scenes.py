@@ -35,6 +35,10 @@ class StreetSpec:
     cam_height: float = 1.83
     aim_height: float = 1.20
     boom_len: float = 2.40
+    # Where the subject sits across the frame. 0.5 centres it, which is what a follow boom
+    # does on its own; the released prompts often say otherwise ("left of center", "lower
+    # center-left"), and `world.shot` reads that out of the prompt.
+    aim_screen_x: float = 0.5
     # Fitted on the shared scene against out/released_reference.json. head_diameter_m is
     # noticeably sensitive to these: the same rig reads 0.244 at tau 0.45 and 0.225 at
     # tau 0.70, because boom damping changes how much of the figure fills the frame.
@@ -154,7 +158,8 @@ def camera(spec: StreetSpec) -> FollowCamera:
                         aim_tau=0.15, focal_px=spec.focal_px, height=spec.cam_height,
                         aim_height=spec.aim_height, rise_gain=spec.rise_gain,
                         pull_back=spec.pull_back, rise_knee=spec.rise_knee,
-                        pitch_min=spec.pitch_min, pitch_max=spec.pitch_max)
+                        pitch_min=spec.pitch_min, pitch_max=spec.pitch_max,
+                        aim_screen_x=spec.aim_screen_x)
 
 
 def street_take(spec: StreetSpec | None = None):
