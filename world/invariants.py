@@ -34,6 +34,32 @@ class Violation:
     detail: str
 
 
+def pitch_saturation(pitches, pitch_min: float, pitch_max: float, tol: float = 1e-6):
+    """Report a camera pitch that sits at a clamp for an ENTIRE window, else "".
+
+    A clamp exists to stop the axis running away, not to choose the framing. When every
+    frame of a window is at the limit, the requested framing was unreachable and what
+    shipped is the limit, not the shot -- and nothing says so.
+
+    We met both sides of this. `t_flight_camera` reported "max pitch +35.0", which is the
+    clamp, pinned there for 46 of 120 frames; that was written down as a reference value
+    until the boom fix moved it to +13.4. On the low side, ex28 and ex31 sit at -35.00 for
+    all 124 frames, which is also why they contain no sky at all: a camera pitched fully
+    down cannot see a horizon.
+
+    Saturating for PART of a window is legitimate -- a climb genuinely reaches the limit --
+    so only a whole window counts.
+    """
+    p = [float(x) for x in pitches]
+    if not p:
+        return ""
+    for name, lim in (("pitch_min", pitch_min), ("pitch_max", pitch_max)):
+        if all(abs(x - lim) <= tol for x in p):
+            return (f"pitch pinned at {name} ({lim:+.2f} deg) for all {len(p)} frames; "
+                    f"the requested framing is unreachable, not chosen")
+    return ""
+
+
 @dataclass
 class Invariants:
     """Accumulates violations; `report()` summarises, `assert_clean()` raises."""

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import math
 import os
 import sys
@@ -44,6 +45,8 @@ def main() -> int:
 
     occ = np.zeros(12, dtype=np.int64)
     far_frac, valid_frac, empties = [], [], []
+    # Byte signature per frame, to catch a window that never changes. See below.
+    sigs: set[bytes] = set()
     for p in depths:
         k = int(os.path.basename(p).split(".")[0])
         d = np.fromfile(p, dtype="<f4")
@@ -53,6 +56,9 @@ def main() -> int:
         s = np.asarray(Image.open(p.replace(".depth.f32", ".semantic_id.png")), dtype=np.uint8)
         if s.shape != (H, W):
             fails.append(f"frame {k}: semantic is {s.shape}, expected {(H, W)}"); continue
+
+        sigs.add(hashlib.md5(d.tobytes()).digest()
+                 + hashlib.md5(s.tobytes()).digest())
 
         if not np.all(np.isfinite(d)):
             fails.append(f"frame {k}: depth has non-finite values")
@@ -100,7 +106,17 @@ def main() -> int:
         fails.append("palette is not injective: two classes share a (U,V)")
 
     occ_frac = occ / max(occ.sum(), 1)
+    # A window of identical frames is not a conditioning signal. Two of our six emitted
+    # one distinct frame repeated 124 times -- 5.17 s with no temporal information -- and
+    # passed every check here, every invariant, and scored perfectly on every steadiness
+    # measure, because a still image is maximally steady. The motion they appeared to have
+    # was a camera bug, and nothing noticed when the bug was fixed.
+    if len(depths) > 1 and len(sigs) == 1:
+        fails.append(f"all {len(depths)} frames are byte-identical: the window carries no "
+                     f"temporal information")
+
     print(f"frames            {len(depths)}")
+    print(f"distinct frames   {len(sigs)}")
     print(f"valid fraction    p10 {np.percentile(valid_frac,10):.3f}  median "
           f"{np.median(valid_frac):.3f}  p90 {np.percentile(valid_frac,90):.3f}")
     print(f"far-clip fraction median {np.median(far_frac):.4f}  max {max(far_frac):.4f}")
