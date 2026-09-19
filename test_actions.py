@@ -7,6 +7,7 @@ fails before it reaches a GPU.
 """
 from __future__ import annotations
 
+import json
 import sys
 
 import numpy as np
@@ -32,26 +33,24 @@ def run(name: str, frames: int, spawns, sources, *, mounts=None, flying=None,
     `mount_from` is the frame by which the rider must be seated: a climb takes time, so
     asserting the mount relation from frame 0 fails an action for doing its job.
 
-    Rule registration is global -- `rules.rule(name)(fn)` writes into a module-level registry
-    that outlives the take. Without snapshotting it, a rule added by one test stays active in
-    the next, which is how a test containing no flight flew the protagonist to 13 m.
+    Each call gets its own RuleSet, so a rule added by one test cannot stay active in the
+    next -- which is how a test containing no flight once flew the protagonist to 13 m.
+    Snapshotting the module registry used to paper over that; the scoping is the fix.
     """
-    baseline = dict(rules._REGISTRY)
     s, ctl, _ = street_take()
-    active = list(rules.names())
+    ruleset = rules.RuleSet()
+    active = ruleset.names()
     inv = Invariants()
     inv.visible_windows = dict(visible or {})
     acts = [ag.Spawn(e) for e in spawns] + [ag.AddRule(n, src) for n, src in sources]
-    active = ag.apply(s, acts, active)
+    active = ag.apply(s, acts, active, ruleset)
     for k in range(frames):
-        rules.step(s, active)
+        ruleset.step(s, active)
         wc.advance_gait(s)
         h = s.get("courier")
         cam = ctl.update(h.pos, h.heading_deg, 1.0 / FPS)
         inv.check(s, cam, k, mounts=mounts, flying=flying)
     inv.finish()
-    rules._REGISTRY.clear()
-    rules._REGISTRY.update(baseline)
     ok = not inv.violations
     print(f"[{'PASS' if ok else 'FAIL'}] {name}")
     if not ok and not quiet:
@@ -659,13 +658,84 @@ def t_shot_parse():
     return ok
 
 
+def t_take_is_reentrant():
+    """Two simulate() calls in one process must produce the same take.
+
+    `AddRule` registers into a module-level registry in world/rules.py that outlives the
+    take, and simulate() used to seed its active set from `sorted(rules.names())`. So the
+    second run in a process started with every rule the FIRST run had added, active from
+    frame 0, before the entities they reference exist -- FLY_ON_PROP fired immediately and
+    the protagonist spent the whole take 14 m in the air.
+
+    This also guards the reason that was invisible: the caption gate could not catch it,
+    because compiling captions and then checking them reads the same window_states twice
+    and agrees with itself no matter what the world is doing.
+    """
+    import json as _json
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    import take_actions as _ta
+
+    import numpy as np
+
+    # A FRESH interpreter, because this test must not depend on what ran before it. Run
+    # in-process it passes vacuously: by the time it executes, earlier tests have already
+    # filled the registry, so it measures 14 -> 14 and sees no leak.
+    probe = (
+        "import json, sys\n"
+        "sys.path.insert(0, %r)\n"
+        "from world import rules\n"
+        "import take_actions as T\n"
+        "before = sorted(rules.names())\n"
+        "a, _, _ = T.simulate(check=False)\n"
+        "mid = sorted(rules.names())\n"
+        "b, _, _ = T.simulate(check=False)\n"
+        "ya = [json.loads(f[1])['entities']['courier']['position'][1] for f in a]\n"
+        "yb = [json.loads(f[1])['entities']['courier']['position'][1] for f in b]\n"
+        "print(json.dumps({'before': before, 'mid': mid, 'ya': ya, 'yb': yb}))\n"
+        % str(Path(_ta.__file__).resolve().parent)
+    )
+    r = subprocess.run([_sys.executable, "-c", probe], capture_output=True, text=True)
+    if r.returncode != 0:
+        print("     probe subprocess failed:", r.stderr.strip().splitlines()[-1:])
+        print("[FAIL] take_is_reentrant")
+        return False
+    d = _json.loads(r.stdout.strip().splitlines()[-1])
+    before, mid = set(d["before"]), set(d["mid"])
+    ya, yb = np.array(d["ya"]), np.array(d["yb"])
+
+    ok = True
+
+    # The registry must not grow across takes.
+    if mid - before:
+        print(f"     registry leaked {sorted(mid - before)} after one take")
+        ok = False
+
+    # And the two takes must be identical, frame for frame.
+    if not np.array_equal(ya, yb):
+        k = int(np.argmax(ya != yb))
+        print(f"     run 2 diverges at frame {k}: courier y {ya[k]:+.2f} vs {yb[k]:+.2f}")
+        ok = False
+
+    # The specific symptom: airborne at frame 0 means a flight rule from a previous take.
+    if float(-yb[0]) > 0.3:
+        print(f"     run 2 starts {-yb[0]:.1f} m in the air")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] take_is_reentrant "
+          f"(registry {len(before)} -> {len(mid)}, run2 opens at {-yb[0]:.2f} m)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
              t_fly_on_prop, t_descend_and_ballistic, t_flight_camera,
              t_caption_compiler, t_actor_captions,
              t_water_surface, t_class_vocabulary, t_camera_modes,
-             t_aim_screen_x, t_shot_parse]
+             t_aim_screen_x, t_shot_parse, t_take_is_reentrant]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

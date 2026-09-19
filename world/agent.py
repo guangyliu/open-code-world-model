@@ -67,8 +67,13 @@ SAFE_BUILTINS = {"abs": abs, "min": min, "max": max, "round": round, "len": len,
                  "sorted": sorted, "sum": sum, "list": list, "dict": dict}
 
 
-def apply(s: WorldState, actions: list[Action], active: list[str]) -> list[str]:
-    """Apply the agent's decisions; returns the updated active-rule list."""
+def apply(s: WorldState, actions: list[Action], active: list[str],
+          ruleset: "rules.RuleSet") -> list[str]:
+    """Apply the agent's decisions; returns the updated active-rule list.
+
+    `ruleset` is required, and is where AddRule puts its rule. It used to register into a
+    process-global dict, which leaked every rule into the next take in the same process.
+    """
     active = list(active)
     for a in actions:
         if isinstance(a, SetParam):
@@ -90,7 +95,7 @@ def apply(s: WorldState, actions: list[Action], active: list[str]) -> list[str]:
             fn = ns.get(a.name)
             if not callable(fn):
                 raise ValueError(f"rule source must define a callable named {a.name!r}")
-            rules.rule(a.name)(fn)
+            ruleset.add(a.name, fn)
             if a.name not in active:
                 active.append(a.name)
             s.log("rule_added", "world", name=a.name)
