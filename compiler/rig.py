@@ -121,11 +121,39 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # it would be the same number whatever resolution or renderer produced it. 47 px/frame is
 # not a physical quantity at all -- it is a composite of amplitude, subject size, framing,
 # resolution and the 2x2 pool, so matching it is closer to fitting the metric than to
-# recovering a measurement. It is used here because the alternative was our own reading of
-# one adverb, and because the resulting angles survive a sanity check independent of it:
-# 14 degrees of torso turn over a four-second cycle is a gentle look-around, and an 18
-# degree shoulder swing moves the hand about 10 cm beside the thigh, which is what "a
-# short distance beside her thigh" describes. We land at 48 against their 47.
+# recovering a measurement. It was adopted because the alternative was our own reading of
+# one adverb -- but the check that was supposed to justify keeping it DOES NOT PASS, and
+# the number it rested on was measured off the wrong bone. We land at 48 against their 47.
+#
+# Measured across a full idle cycle, naming the landmark:
+#
+#     hand  (forearm end, 0.751 m above the feet)   34.1 cm peak-to-peak
+#     elbow (upper-arm end, 0.996 m)                20.4 cm peak-to-peak
+#     analytic: upper arm 0.280 m x sin 18 deg =  8.7 cm from neutral
+#               full arm  0.536 m x sin 18 deg = 16.6 cm from neutral
+#
+# The "about 10 cm" this comment used to claim for the hand is the ELBOW. The hand travels
+# 34.1 cm peak-to-peak, about 17 cm either side of mid-swing: a forearm's length, not a
+# hand's width. Against the walking gait at the SAME landmark it is not short at all:
+#
+#     walking hand swing (walk_pose)   40.4 cm peak-to-peak
+#     idle hand swing at 18 deg        34.1 cm  =  84% of it
+#     by shoulder angle                18.0 vs 22.4 deg  =  80%
+#
+# So 18 degrees is not faithful to "subtly ... a short distance beside her thigh": it is
+# four fifths of a full walking arm swing on a subject the prompt describes as planted.
+# The clause-faithful angle is about 8 degrees -- hand 14.9 cm peak-to-peak, roughly 37%
+# of a walk -- which is what the first reading of the words gave, before the amplitude was
+# scaled to their 47 px/frame. The amplitude is left as it is here because changing it is
+# behavioural and needs its own commit, its own test and re-verification of the six and
+# the take; what is recorded is that the fitted value is unsupported by the clause rather
+# than corroborated by it.
+#
+# Two errors in this comment's history were both a plausible number from a nearly-right
+# geometric quantity: the elbow-for-hand above, and a first attempt at the walking
+# comparison that took the largest excursion over EVERY rig point -- which for a walk is
+# the foot, giving 94.8 cm and a flattering 36%. Name the exact landmark whenever a
+# distance is quoted off the rig.
 #
 # One property of IDLE_HZ = 0.25 a reader of the DUV should expect rather than be surprised
 # by: the cycle is 96 frames at 24 fps, and a window is 124, so it repeats exactly once --
