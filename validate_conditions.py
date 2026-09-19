@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 NEAR_M, FAR_M = 0.3, 256.0
-ARTICULATION_MIN = 20           # px of class-8 mask change per frame; see the check below
+ARTICULATION_MIN = 5            # px of class-8 mask change per frame; see the check below
 ARTICULATION_MIN_AREA = 0.005   # below this share of frame, articulation is sub-pixel
 W, H = 336, 192
 SEMANTIC_U = (32, 96, 160, 224)
@@ -124,11 +124,21 @@ def main() -> int:
     # byte-identical across all 124 frames and validated clean, because its camera tracked
     # a rigid-legged stag across a moving scene.
     #
-    # ARTICULATION_MIN is 20 px of a 336x192 frame. The anchor is their own conditions:
-    # their planted subject (ex36, the one whose prompt says she turns her head and swings
-    # a hand without stepping) changes by a median of 47 px per frame, and their plainest
-    # walk (ex30) by 32. 20 sits below the quieter of those with margin, and far above the
-    # sub-pixel wobble that a token animation would produce.
+    # ARTICULATION_MIN is 5 px of a 336x192 frame, and it is a floor against RIGIDITY, not
+    # a target drawn from their amplitudes.
+    #
+    # It was 20, justified as "below their quietest window (ex30, 32)". ex30 is a WALK, so
+    # that cited the wrong population: this guard is about subjects that are standing
+    # still. Measured across their planted windows, per unit area, they span a factor of
+    # 50 -- and their quietest, ex37, moves 6 px/frame at 9.02% of frame while its own
+    # prompt plants it ("weight distributed through both planted feet"). At 20 their ex37
+    # would fail this guard. A floor their own data cannot clear is not a floor.
+    #
+    # So it is set from the two ends that ARE measured: above zero, to catch the rigidity
+    # this was written for -- ex31's stag at 0 px/frame across 124 frames, and ex36 as a
+    # single repeated frame -- and below 6, so the quietest planted window they ship would
+    # pass. t_articulation_floor_brackets_the_released_planted_range asserts both sides,
+    # because a floor is only meaningful if something fails just under it.
     #
     # ARTICULATION_MIN_AREA exempts a subject too small to articulate visibly rather than
     # failing it forever. At 0.5% of frame a body is about 320 px, and a few degrees of

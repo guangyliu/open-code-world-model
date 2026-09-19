@@ -2101,6 +2101,96 @@ def t_idle_adjusts_hips_and_knees_with_feet_planted():
     return ok
 
 
+def t_articulation_floor_brackets_the_released_planted_range():
+    """The floor must sit between a rigid subject and the quietest thing they actually ship.
+
+    ARTICULATION_MIN was 20 px/frame, justified as "below their quietest window (ex30, 32)".
+    ex30 is a WALK. Their planted windows -- the population this guard is about -- span a
+    factor of 50 per unit area, and their quietest, ex37, moves 6 px/frame at 9.02% of
+    frame while its prompt plants it explicitly ("weight distributed through both planted
+    feet"). At 20 their own ex37 would fail our guard. The floor was anchored on the wrong
+    population.
+
+    What the guard is actually for is catching RIGIDITY -- ex31's stag at 0 px/frame, and
+    ex36 as a single repeated frame. So the floor is bracketed from both sides here rather
+    than cited from one number: a window just above it must pass, a window just below it
+    must fail, and a rigid window must fail whatever it is set to.
+
+    The windows are synthesised with an exactly controlled rate rather than measured off a
+    render: a run of L pixels toggles to a new row each frame against a still body, so
+    consecutive masks differ by exactly 2L and the median IS the target. Anything less
+    exact cannot bracket a constant -- a first attempt elsewhere at a phase-quantised notch
+    produced medians of 0 and 180 for targets of 6 and 30.
+    """
+    import subprocess
+    import sys as _sys
+    import tempfile
+    from pathlib import Path as _P
+
+    import numpy as np
+    from PIL import Image
+
+    import take_actions as _ta
+    from validate_conditions import ARTICULATION_MIN, ARTICULATION_MIN_AREA
+
+    root = _P(_ta.__file__).resolve().parent
+    ok = True
+    H, W = 192, 336
+    LOW, HIGH = ARTICULATION_MIN - 1, ARTICULATION_MIN + 1
+
+    if not (LOW % 2 == 0 and HIGH % 2 == 0):
+        # 2L is always even, so the bracket has to straddle an odd floor.
+        print(f"     ARTICULATION_MIN is {ARTICULATION_MIN}; this test brackets it with "
+              f"even rates and needs an odd floor to straddle")
+        ok = False
+
+    def write(into, rate, n=12):
+        """A still body plus a run of rate/2 pixels that moves every frame."""
+        into.mkdir(parents=True, exist_ok=True)
+        body = np.zeros((H, W), bool)
+        body[60:130, 140:200] = True                    # 6.5% of frame, above the exemption
+        for k in range(n):
+            m = body.copy()
+            if rate:
+                m[40 + (k % 5), 10:10 + rate // 2] = True
+            d = np.where(m, 5.0, 10.0).astype(np.float32)
+            sm = np.where(m, 8, 4).astype(np.uint8)
+            sm[150:170, (k * 17) % 300:(k * 17) % 300 + 18] = 5   # scenery, never still
+            d[:20] = 0.0
+            sm[:20] = 1
+            np.ascontiguousarray(d, dtype="<f4").tofile(into / f"{k:06d}.depth.f32")
+            Image.fromarray(np.ascontiguousarray(sm), "L").save(
+                into / f"{k:06d}.semantic_id.png")
+        return into
+
+    def passes(into, n=12):
+        r = subprocess.run([_sys.executable, str(root / "validate_conditions.py"),
+                            str(into), "--expect", str(n)],
+                           capture_output=True, text=True, cwd=str(root))
+        return r.returncode == 0, r.stdout + r.stderr
+
+    with tempfile.TemporaryDirectory() as td:
+        for rate, want, why in ((HIGH, True, "just above the floor"),
+                                (LOW, False, "just below the floor"),
+                                (0, False, "rigid: the subject never changes")):
+            good, out = passes(write(_P(td) / f"r{rate}", rate))
+            if good != want:
+                got = "passed" if good else "failed"
+                print(f"     a window at {rate} px/frame ({why}) {got}; "
+                      f"ARTICULATION_MIN is {ARTICULATION_MIN}")
+                ok = False
+
+        # The area exemption must not be what is carrying these: the body is well above it.
+        if 4200 / (H * W) <= ARTICULATION_MIN_AREA:
+            print("     the synthetic body is inside the area exemption, so these cases "
+                  "prove nothing about the floor")
+            ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] articulation_floor_brackets_the_released_planted_range "
+          f"(floor {ARTICULATION_MIN}; {HIGH} passes, {LOW} and 0 fail)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -2116,7 +2206,8 @@ if __name__ == "__main__":
              t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y,
              t_articulation_covers_animals_and_planted_subjects,
              t_idle_amplitude_follows_the_clause,
-             t_idle_adjusts_hips_and_knees_with_feet_planted]
+             t_idle_adjusts_hips_and_knees_with_feet_planted,
+             t_articulation_floor_brackets_the_released_planted_range]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
