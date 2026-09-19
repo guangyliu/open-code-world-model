@@ -126,7 +126,10 @@ def simulate(check: bool = True):
     ruleset = rules.RuleSet()
     active = ruleset.names()
     S, _ = script()
-    inv = Invariants()
+    # The rig owns the clamps, so take them from it rather than from a spec that is
+    # discarded above: a clamp that saturates a whole window means the framing that
+    # shipped is the limit, not the shot.
+    inv = Invariants(pitch_clamp=(ctl.pitch_min, ctl.pitch_max))
     # What must be seen, and when. `visible` covers elevation *and* bearing: an aircraft at the
     # right height but behind the camera passes every distance check and appears in nothing.
     inv.visible_windows = {"taxi": (80, 150), "camel": (300, 385),

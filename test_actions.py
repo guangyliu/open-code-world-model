@@ -1571,6 +1571,10 @@ def t_window_rejects_a_still_and_a_pinned_pitch():
         ([-20.0] * 124, False, "constant but not at a clamp"),
         ([lo] * 60 + [-20.0] * 64, False, "saturated for half the window"),
         (list(np.linspace(lo, hi, 124)), False, "sweeping between the clamps"),
+        # Both allowances, pinned by the real case that defeated the first version: a take
+        # split across BOTH clamps, with a couple of frames in transit between them.
+        ([lo] * 421 + [hi] * 61 + [0.0, 1.0], True, "482 of 484 across both clamps"),
+        ([lo] * 400 + [0.0] * 84, False, "83% at a clamp, below the threshold"),
     ]
     for pitches, want_flag, why in cases:
         got = pitch_saturation(pitches, lo, hi)
@@ -1579,8 +1583,36 @@ def t_window_rejects_a_still_and_a_pinned_pitch():
                   f"{'a report' if want_flag else 'nothing'}")
             ok = False
 
+    # A guard nothing calls is not a guard. `pitch_saturation` was correct, tested, and
+    # invoked only by this test: Invariants.check receives the camera every frame and never
+    # recorded its pitch, finish() never called the helper, and the scene script built no
+    # Invariants at all. The suite was green while three of six windows sat at the clamp
+    # with nothing reporting it. That is the fourth time this shape has appeared here -- a
+    # dead assertion, a floor that could not fail, a measurement of broken behaviour used as
+    # a reference, and now a guard that is never reached -- so the wiring is asserted, not
+    # just the helper.
+    from compiler.render import Camera
+    from world.invariants import Invariants
+    from world.state import WorldState
+
+    def run_take(pitch_series, clamp=(-35.0, 35.0)):
+        inv = Invariants(pitch_clamp=clamp)
+        st = WorldState(seed=0)
+        for k, pd in enumerate(pitch_series):
+            inv.check(st, Camera(focal_px=206.0, position=np.zeros(3), pitch_deg=pd), k)
+        inv.finish()
+        return [v for v in inv.violations if v.rule == "pitch"]
+
+    if not run_take([-35.0] * 124):
+        print("     a take pinned at the clamp for all 124 frames produced no violation: "
+              "pitch_saturation exists but nothing calls it")
+        ok = False
+    if run_take([-20.0] * 124):
+        print("     a take well inside the clamp was reported as saturated")
+        ok = False
+
     print(f"[{'PASS' if ok else 'FAIL'}] window_rejects_a_still_and_a_pinned_pitch "
-          f"({len(cases)} pitch cases)")
+          f"({len(cases)} pitch cases, wiring checked)")
     return ok
 
 
