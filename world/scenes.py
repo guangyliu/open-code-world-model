@@ -104,7 +104,12 @@ def build(spec: StreetSpec) -> WorldState:
     if spec.has_road:
         s.params["road"] = {"half_width": spec.road_half_width, "half_length": 400.0,
                             "centre_z": 300.0, "x": spec.road_x}
+    # `size` is not used to build the human -- `compiler.rig` does that from the pose --
+    # but it IS the bounding sphere the visibility invariant tests. Left at the default
+    # [1,1,1] the 0.97 threshold on the protagonist was checking a 0.5 m ball centred at
+    # his knees rather than the 1.75 m figure the renderer draws.
     s.add(Entity("courier", "human", [0.0, 0.0, 0.0], speed=spec.base_speed,
+                 size=[0.55, 1.75, 0.40],
                  attrs={"waypoints": [list(w) for w in spec.waypoints]}))
     for k in range(spec.n_peds):
         x = (-1) ** k * 2.2
