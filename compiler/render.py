@@ -401,9 +401,99 @@ def pool(z: np.ndarray, ids: np.ndarray):
     return np.where(allsky, 0.0, zo).astype(np.float32), np.where(allsky, np.uint8(1), io).astype(np.uint8)
 
 
-def render_frame(camera: Camera, prims: list[Primitive], *, cull: bool = True):
-    """Full path to a published-format frame: render, pool, clamp beyond the far plane."""
-    return pool(*render(camera, prims, cull=cull))
+# ----------------------------------------------------- the gray16 condition family
+#
+# The released examples come in two families and `metadata.json` is the only thing that
+# tells them apart -- both store float32 arrays, so dtype cannot. 15 of the 40 are metric
+# (`pool()` above); the other 25 declare:
+#
+#   depth_format        uint16_le_fixed_log_gray16_codes
+#   depth_mapping       fixed_log_view_z_0p3m_256m_near_white_gray16_v1
+#   depth_resample      box_mean_2x2_fixed_log_gray16_round_half_up_v1
+#   semantic_id_resample categorical_mode_2x2_nearest_center_tiebreak_ontology0_11_v1
+#
+# i.e. integer codes 0-65535 held in a float32 array, pooled by box MEAN in code space --
+# not by minimum positive depth.
+
+GRAY16_MAX = 65535
+_LOG_SPAN = float(np.log(FAR_M / NEAR_M))
+
+
+def encode_gray16(z: np.ndarray) -> np.ndarray:
+    """Metric depth -> fixed-log gray16 codes. Near is white (65535), far is 0.
+
+    A no-hit pixel (z <= 0) encodes to 0, which is also the code for a surface exactly at
+    the far plane. That collision is theirs, not ours: code 0 means "at or beyond 256 m",
+    and the family cannot distinguish the two.
+    """
+    z = np.asarray(z, float)
+    hit = z > 0
+    zc = np.clip(np.where(hit, z, FAR_M), NEAR_M, FAR_M)
+    v = GRAY16_MAX * (1.0 - np.log(zc / NEAR_M) / _LOG_SPAN)
+    return np.where(hit, v, 0.0)
+
+
+def decode_gray16(v: np.ndarray) -> np.ndarray:
+    """Fixed-log gray16 codes -> metres. Code 0 is the far / no-hit sentinel.
+
+    Near = white. Reading it near-black instead takes flat-plane error from 0.30-1.42% to
+    10.8-21.9%, and reading it as linear disparity makes roads span 1.5-7282 m; the
+    direction was established by falsification, not assumed.
+    """
+    v = np.asarray(v, float)
+    return np.where(v > 0, NEAR_M * np.exp(_LOG_SPAN * (1.0 - v / GRAY16_MAX)), FAR_M)
+
+
+def pool_gray16(z: np.ndarray, ids: np.ndarray):
+    """The gray16 family's downsample. Returns (codes as float32, class ids).
+
+    Depth: encode to codes, then box mean per 2x2, rounded half up. Because it is a MEAN,
+    a 2x2 straddling a silhouette yields a code belonging to neither surface -- which is
+    the signature that distinguishes this family from `pool()` and cannot be faked by any
+    minimum-depth rule. See `test_cull.py::t_gray16_blended_sky`.
+
+    Semantics: categorical mode over the 0-11 ontology. Their name for the tiebreak is
+    "nearest_center", which is degenerate in a 2x2 -- all four pixels are equidistant from
+    the block centre -- so it reduces to a fixed order, and we take the earliest pixel in
+    scan order among the tied classes. We cannot verify their choice: the release ships the
+    pooled 336x192 result and never the 672x384 source, so no tied block is observable.
+    It affects only blocks with no majority.
+    """
+    codes = encode_gray16(z)
+    h, w = codes.shape
+    cb = codes.reshape(h // 2, 2, w // 2, 2).transpose(0, 2, 1, 3).reshape(h // 2, w // 2, 4)
+    ib = ids.reshape(h // 2, 2, w // 2, 2).transpose(0, 2, 1, 3).reshape(h // 2, w // 2, 4)
+
+    out = np.floor(cb.mean(axis=-1) + 0.5)          # round half up
+    out = np.clip(out, 0, GRAY16_MAX)
+
+    counts = np.stack([(ib == c).sum(-1) for c in range(12)], axis=-1)
+    best = counts.max(-1, keepdims=True)
+    tied = counts == best
+    sel = np.zeros(ib.shape[:2], np.uint8)
+    taken = np.zeros(ib.shape[:2], bool)
+    for k in range(4):                               # scan order within the block
+        c = ib[..., k]
+        is_tied = np.take_along_axis(tied, c[..., None].astype(np.intp), -1)[..., 0]
+        pick = is_tied & ~taken
+        sel = np.where(pick, c, sel)
+        taken |= pick
+    return out.astype(np.float32), sel.astype(np.uint8)
+
+
+def render_frame(camera: Camera, prims: list[Primitive], *, cull: bool = True,
+                 family: str = "metric"):
+    """Full path to a published-format frame: render, then pool for the chosen family.
+
+    `family` is "metric" (default, what we author) or "gray16". It is never inferred from
+    data -- the released files carry it in `metadata.json`.
+    """
+    z, ids = render(camera, prims, cull=cull)
+    if family == "gray16":
+        return pool_gray16(z, ids)
+    if family != "metric":
+        raise ValueError(f"unknown condition family {family!r}; use 'metric' or 'gray16'")
+    return pool(z, ids)
 
 
 def vegetation_clump(centre, radius: float, *, aspect: float = 1.0, lobes: int = 18,

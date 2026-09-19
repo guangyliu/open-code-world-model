@@ -80,8 +80,105 @@ def t_cost() -> bool:
     return True
 
 
+def t_gray16_roundtrip():
+    """encode -> decode must return the depths it was given, across the whole range."""
+    from compiler.render import (FAR_M, GRAY16_MAX, NEAR_M, decode_gray16,
+                                 encode_gray16)
+
+    ok = True
+    z = np.array([0.3, 0.5, 1.0, 2.5, 10.0, 47.3, 120.0, 255.0, 256.0])
+    back = decode_gray16(encode_gray16(z))
+    rel = np.abs(back - z) / z
+    if rel.max() > 2e-4:
+        print("     round-trip error %.2e at z=%.1f" % (rel.max(), z[rel.argmax()]))
+        ok = False
+
+    # Near is WHITE: the near plane is the largest code, the far plane is 0. Getting this
+    # backwards is the error that takes flat-plane fits from 0.3% to 10.8-21.9%.
+    if not abs(float(encode_gray16(np.array([NEAR_M]))[0]) - GRAY16_MAX) < 1.0:
+        print("     near plane does not encode to white")
+        ok = False
+    if float(encode_gray16(np.array([FAR_M]))[0]) != 0.0:
+        print("     far plane does not encode to 0")
+        ok = False
+
+    # A no-hit pixel encodes to the far sentinel and decodes back to the far plane.
+    if float(encode_gray16(np.array([0.0]))[0]) != 0.0:
+        print("     no-hit did not encode to the far sentinel")
+        ok = False
+    if float(decode_gray16(np.array([0.0]))[0]) != FAR_M:
+        print("     code 0 did not decode to the far plane")
+        ok = False
+
+    print("     round-trip clean, max rel err %.1e over 0.3-256 m" % rel.max())
+    return ok
+
+
+def t_gray16_blended_sky():
+    """The signature that tells the two families apart, on a render of our own.
+
+    Under minimum-positive-depth a 2x2 that straddles a silhouette resolves to ONE of the
+    two surfaces: a pixel labelled sky had no hit in all four samples, so its depth is
+    exactly 0. A box MEAN in code space cannot do that -- it returns a code belonging to
+    neither surface, so some sky-labelled pixels carry a finite blended depth. That is
+    measured in the released data: 100% of metric-family sky pixels are exactly 0, while
+    0.1-1.1% of gray16 sky pixels sit at 43-256 m.
+
+    This reproduces the signature on a scene we control, which is the only way to be sure
+    the implementation has it rather than the data merely showing it.
+    """
+    from compiler.render import (FAR_M, Box, decode_gray16, pool, pool_gray16,
+                                 render)
+
+    ok = True
+    # A wall standing against open sky: half the frame is a silhouette edge, so the 2x2
+    # blocks along it are exactly the straddling case.
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.67, 0.0]), pitch_deg=0.0)
+    prims = [Box(np.array([0.0, -3.0, 14.0]), np.array([3.0, 3.0, 0.4]), class_id=0)]
+    z, ids = render(cam, prims)
+
+    zm, im = pool(z, ids)
+    cg, ig = pool_gray16(z, ids)
+    zg = decode_gray16(cg)
+
+    # metric: every sky pixel is exactly zero, with no exceptions.
+    metric_bad = int(((im == 1) & (zm > 0)).sum())
+    if metric_bad != 0:
+        print("     pool() produced %d sky pixels with non-zero depth" % metric_bad)
+        ok = False
+
+    # gray16: some sky pixels carry a blended depth, and it lands in the released band.
+    blended = (ig == 1) & (cg > 0)
+    n_blend = int(blended.sum())
+    if n_blend == 0:
+        print("     pool_gray16 produced no blended sky pixels; it is not a box mean")
+        ok = False
+    else:
+        band = zg[blended]
+        if not (band.min() >= 43.0 and band.max() <= FAR_M + 1e-3):
+            print("     blended sky depths %.1f-%.1f m are outside the released 43-256 m"
+                  % (band.min(), band.max()))
+            ok = False
+
+    # Negative case: wiring the gray16 path to minimum-positive must fail this test. If it
+    # ever does get wired that way, `blended` above goes to zero and so does this.
+    zmin, imin = pool(z, ids)
+    if int(((imin == 1) & (zmin > 0)).sum()) != 0:
+        print("     the negative case is not staged: min-positive blended a sky pixel")
+        ok = False
+    if n_blend and int(((imin == 1) & (zmin > 0)).sum()) >= n_blend:
+        print("     min-positive matched the box mean; the signature does not separate them")
+        ok = False
+
+    print("     gray16 %d blended sky px at %.0f-%.0f m; pool() %d"
+          % (n_blend, zg[blended].min() if n_blend else 0,
+             zg[blended].max() if n_blend else 0, metric_bad))
+    return ok
+
+
 if __name__ == "__main__":
-    tests = [t_branches, t_pixels, t_cost]
+    tests = [t_branches, t_pixels, t_cost,
+             t_gray16_roundtrip, t_gray16_blended_sky]
     results = []
     for t in tests:
         r = bool(t())
