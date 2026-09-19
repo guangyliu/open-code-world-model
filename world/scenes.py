@@ -26,11 +26,12 @@ class StreetSpec:
     """Everything that varies between takes. Ranges are documented in batch.sample_spec."""
 
     seed: int = 33
-    # The released intrinsic, measured from their depth maps by an estimator validated on
-    # known-answer synthetic data and cross-checked by a second mechanism: 206.6 px at
-    # 336x192, IQR [204, 207] over 97 estimates. This used to be 202.0, carried over from
-    # an operating point fitted against a reference file that is not part of this
-    # repository; 206.0 matches `compiler.render.Camera` and the measurement.
+    # The released intrinsic: 206.6 px at 336x192, IQR [204, 207] over 97 estimates,
+    # recovered by the two-frame rigidity method in `inverse/focal.py`. NOT by
+    # `probe.geometry.fit_ground` -- that needs euclidean range, and the released
+    # conditions are z-depth, on which plane flatness is exactly f-invariant. This used to
+    # be 202.0, carried over from an operating point fitted against a reference file that
+    # is not part of this repository; 206.0 matches `compiler.render.Camera`.
     focal_px: float = 206.0
     cam_height: float = 1.83
     aim_height: float = 1.20
