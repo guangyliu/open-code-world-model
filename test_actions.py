@@ -1126,6 +1126,125 @@ def t_validate_checks_sky_contract():
     return ok
 
 
+def t_cache_matches_fresh_build():
+    """A persistent PrimitiveCache must return exactly what a fresh build returns.
+
+    This is the assertion that makes the cache safe rather than merely fast, and it is the
+    one that was missing. `_signature` keyed on transform, gait, scale, size, alive and
+    speed -- but NOT on `kind` or on `attrs["class_id"]`, both of which `_entity_shapes`
+    branches on. That was dormant while the cache was constructed fresh at every call and
+    therefore never cached; making it persist per worker turned it live.
+
+    The failure mode is the quiet one: an entity whose ROLE changes without its TRANSFORM
+    changing keeps its old semantic class forever. Geometry right, depth right, semantic
+    channel stale. And it is exactly the case the override exists for -- a prop that
+    becomes a conveyance when it is ridden, or released example 31's stag, which is a
+    quadruped emitting class 8 because class is about role, not shape.
+    """
+    import numpy as np
+
+    from compiler.render import Camera, render_frame
+    from world import compile as wc
+    from world.state import Entity, WorldState
+
+    ok = True
+
+    # 1. The staged case, at the pixel level: role changes, transform does not.
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.7, 0.0]), pitch_deg=0.0)
+    st = WorldState(seed=0)
+    st.add(Entity("thing", "prop", [0.0, -1.0, 6.0], size=[0.4, 0.4, 2.0],
+                  attrs={"class_id": 0}))
+    cache = wc.PrimitiveCache()
+    render_frame(cam, cache.build(st))                 # frame 1, class 0
+    st.get("thing").attrs["class_id"] = 10             # role change, no movement
+    _z, cached_ids = render_frame(cam, cache.build(st))
+    _z, fresh_ids = render_frame(cam, wc.PrimitiveCache().build(st))
+    wrong = int((cached_ids != fresh_ids).sum())
+    if wrong:
+        print(f"     after a role change the cache rendered {wrong} px with the stale "
+              f"class: cached {sorted(set(np.unique(cached_ids).tolist()))} vs fresh "
+              f"{sorted(set(np.unique(fresh_ids).tolist()))}")
+        ok = False
+
+    # 2. The whole take, structurally. Primitive identity implies pixel identity and costs
+    #    no ray tracing, so this can cover all 484 frames rather than a sample.
+    plan, _, _ = simulate_take(check=False)
+    persistent = wc.PrimitiveCache()
+    bad_frames = []
+    for k, sj, _cam in plan:
+        world = WorldState.from_json(sj)
+        a = [(type(q).__name__, q.class_id) for q in persistent.build(world)]
+        b = [(type(q).__name__, q.class_id) for q in wc.PrimitiveCache().build(world)]
+        if a != b:
+            bad_frames.append(k)
+    if bad_frames:
+        print(f"     persistent cache differs from a fresh build on {len(bad_frames)} "
+              f"frames, first at {bad_frames[0]}")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] cache_matches_fresh_build "
+          f"(role change {wrong} px wrong, {len(plan)} take frames "
+          f"{len(bad_frames)} differing)")
+    return ok
+
+
+def t_window_arithmetic():
+    """The 124 / 90 / 34 windowing rule, asserted once instead of copied five times.
+
+    FRAMES = 484 is currently justified by a comment. The constants live in four modules
+    -- writer, caption, narrate, probe.proxy -- and nothing checked that they agree or
+    that FRAMES actually tiles: setting it to 500 would silently produce a take the
+    windowing cannot cover, with the last window running off the end of the plan.
+
+    `writer.WINDOW_FRAMES` and `writer.STRIDE_FRAMES` lost their last consumer when the
+    dead `window_starts` was deleted. Rather than drop them, they are asserted here, which
+    is what they were for.
+    """
+    from compiler import caption as _cap
+    from compiler import writer as _wr
+    from probe import proxy as _px
+    from world import narrate as _nr
+
+    import take_actions as _ta
+
+    ok = True
+    W, S = _wr.WINDOW_FRAMES, _wr.STRIDE_FRAMES
+
+    # One rule, one place. Every module that tiles frames must agree on it.
+    for name, got in (("caption.WINDOW_FRAMES", _cap.WINDOW_FRAMES),
+                      ("narrate.WINDOW_FRAMES", _nr.WINDOW_FRAMES),
+                      ("proxy.WINDOW_FRAMES", _px.WINDOW_FRAMES)):
+        if got != W:
+            print(f"     {name} is {got}, writer says {W}")
+            ok = False
+    if _nr.STRIDE != S:
+        print(f"     narrate.STRIDE is {_nr.STRIDE}, writer says {S}")
+        ok = False
+
+    # The take must tile exactly: 124 + 90*(k-1).
+    want = W + S * (_ta.WINDOWS - 1)
+    if _ta.FRAMES != want:
+        print(f"     FRAMES is {_ta.FRAMES}; {_ta.WINDOWS} windows of {W} at stride {S} "
+              f"tile {want}")
+        ok = False
+
+    # And the last window must end exactly on the last frame, not past it.
+    last_start = S * (_ta.WINDOWS - 1)
+    if last_start + W != _ta.FRAMES:
+        print(f"     last window covers {last_start}..{last_start + W - 1}, take ends at "
+              f"{_ta.FRAMES - 1}")
+        ok = False
+
+    # The Retake34 overlap is what the continuity prefix pins.
+    if W - S != 34:
+        print(f"     overlap is {W - S} frames, Retake34 expects 34")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] window_arithmetic "
+          f"({_ta.WINDOWS} x {W} @ stride {S} = {want} frames, overlap {W - S})")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1134,7 +1253,8 @@ if __name__ == "__main__":
              t_water_surface, t_class_vocabulary, t_camera_modes,
              t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
              t_visibility_counts_near_objects, t_checkdefs_scope,
-             t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract]
+             t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract,
+             t_cache_matches_fresh_build, t_window_arithmetic]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

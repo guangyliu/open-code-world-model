@@ -38,10 +38,21 @@ class PrimitiveCache:
 
     @staticmethod
     def _signature(e) -> tuple:
+        """Everything `_entity_shapes` and the class override read.
+
+        `kind` and `attrs["class_id"]` belong here because both change what is built
+        without changing the transform: `_entity_shapes` branches on kind, and the
+        override decides the semantic class. Leaving them out was harmless only while the
+        cache was constructed fresh at every call and therefore never cached anything.
+        Once it persists, an entity whose ROLE changes while it sits still keeps its old
+        class forever -- geometry right, depth right, semantic channel stale -- and that is
+        precisely the case the override exists for: a prop that becomes a conveyance when
+        it is ridden, or a quadruped emitting class 8 because it is the protagonist.
+        """
         return (round(e.position[0], 4), round(e.position[1], 4), round(e.position[2], 4),
                 round(e.heading_deg, 3), round(float(e.attrs.get("gait_phase", 0.0)), 4),
                 round(float(e.attrs.get("scale", 1.0)), 4), tuple(e.size), e.alive,
-                round(e.speed, 4))
+                round(e.speed, 4), e.kind, e.attrs.get("class_id"))
 
     def build(self, s: WorldState, *, ground_class: int = 0) -> list:
         out = list(_ground(s, ground_class))
