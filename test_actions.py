@@ -1584,6 +1584,77 @@ def t_window_rejects_a_still_and_a_pinned_pitch():
     return ok
 
 
+def t_aim_screen_y():
+    """Vertical placement must be a framing request, not a mis-aimed lens.
+
+    `subject_low` parses for 14 of the 40 released prompts and was wired to nothing. The
+    scene presets faked it through `aim_height` instead -- ex31 aims at 0.0 m, the stag's
+    hooves, and ex28 at 0.55 m -- which is a different quantity: `aim_height` chooses the
+    point ON THE SUBJECT the lens looks at. Dragging it to the feet tips the whole optical
+    axis down until it hits the clamp, and then the framing stops responding at all. At
+    875a1b9 ex28 and ex31 sat at pitch -35.00, the clamp, for every one of 124 frames, and
+    that is also why they contained no sky: a camera pitched fully down has no horizon in
+    it.
+
+    The horizontal axis already has the right mechanism -- `aim_screen_x` rotates the
+    optical axis and leaves the aim point alone. This is its vertical twin, and the
+    placement words map the same way: "lower center" is the lower rule-of-thirds line, the
+    same choice-from-the-vocabulary that `THIRD_LEFT` makes, not a fitted number.
+    """
+    import numpy as np
+
+    from compiler.follow import FollowCamera
+    from compiler.render import OUT_H
+    from world.shot import LOWER_THIRD, Shot, aim_y_for
+
+    ok = True
+
+    def landed(fy, aim_height=0.9):
+        cam = FollowCamera(distance=2.4, height=1.7, aim_height=aim_height,
+                           aim_screen_y=fy)
+        pitches = []
+        for k in range(60):
+            c = cam.update(np.array([0.0, 0.0, 2.0 * k / FPS]), 0.0, 1.0 / FPS)
+            pitches.append(c.pitch_deg)
+        tgt = np.array([0.0, -aim_height, 2.0 * 59 / FPS])
+        cp = c.to_camera(tgt)[0]
+        return float(cp[1] / cp[2] * c.focal_px + OUT_H / 2) / OUT_H, pitches
+
+    for fy in (0.5, LOWER_THIRD, 1.0 / 3.0, 0.6):
+        got, _ = landed(fy)
+        if abs(got - fy) > 0.02:
+            print("     asked for %.3f, subject landed at %.3f" % (fy, got))
+            ok = False
+
+    # Negative: without the offset every request collapses to the boom's fixed point.
+    lo, _ = landed(LOWER_THIRD)
+    hi, _ = landed(1.0 / 3.0)
+    if abs(lo - hi) < 0.15:
+        print(f"     upper and lower requests land {abs(lo - hi):.3f} apart; the offset is "
+              f"not reaching the axis")
+        ok = False
+
+    # The whole point: placing the subject low must NOT be bought by saturating the clamp.
+    _, pitches = landed(LOWER_THIRD)
+    from world.invariants import pitch_saturation
+    sat = pitch_saturation(pitches, -35.0, 35.0)
+    if sat:
+        print(f"     placing the subject low saturated the axis: {sat}")
+        ok = False
+
+    # And the parse must reach it, or this is another mechanism wired to nothing.
+    if aim_y_for(Shot(subject_low=True)) != LOWER_THIRD:
+        print(f"     subject_low maps to {aim_y_for(Shot(subject_low=True))}, not LOWER_THIRD")
+        ok = False
+    if aim_y_for(Shot()) != 0.5:
+        print(f"     a prompt that says nothing maps to {aim_y_for(Shot())}, not centre")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] aim_screen_y "
+          f"(low {lo:.3f} vs upper-third {hi:.3f}, pitch unsaturated)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1596,7 +1667,7 @@ if __name__ == "__main__":
              t_cache_matches_fresh_build, t_window_arithmetic,
              t_boom_holds_distance, t_aim_seeded_at_steady_state,
              t_framed_holds_the_opening_layout,
-             t_window_rejects_a_still_and_a_pinned_pitch]
+             t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

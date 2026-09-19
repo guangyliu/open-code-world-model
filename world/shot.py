@@ -44,6 +44,22 @@ from dataclasses import dataclass
 CENTRE = 0.50
 THIRD_LEFT = 1.0 / 3.0
 THIRD_RIGHT = 2.0 / 3.0
+# Vertical, same rule and same reasoning: "lower center", "lower center-left" name the
+# lower rule-of-thirds line. Chosen from the vocabulary, not fitted to a measurement.
+LOWER_THIRD = 2.0 / 3.0
+UPPER_THIRD = 1.0 / 3.0
+
+
+def aim_y_for(sh: "Shot") -> float:
+    """Where the subject sits vertically in frame, as a screen fraction.
+
+    `subject_low` parses for 14 of the 40 prompts and used to be wired to nothing. Scenes
+    faked it with `aim_height`, which is a different quantity -- the point ON THE SUBJECT
+    the lens looks at -- and dragging that to the feet tips the optical axis into its clamp
+    and stops the framing responding at all. ex28 and ex31 sat at pitch -35.00, the clamp,
+    for all 124 frames, which is also why neither contained any sky.
+    """
+    return LOWER_THIRD if sh.subject_low else CENTRE
 
 
 @dataclass
