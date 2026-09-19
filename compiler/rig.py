@@ -145,24 +145,24 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # than closed: it lands at 26 px/frame against their 47. That gap is real and is not
 # something to spend amplitude on.
 #
-# IDLE_SWAY_DEG is the exception, though less of one than this comment used to claim. The
-# channel IS named -- "She continues standing in place with a mild sway through the waist"
-# -- so "breathing sway" was our word for something the prompt describes. What has no
-# anchor is the MAGNITUDE: "mild" does not fix 3.0 degrees any more than it fixes 1.5, and
-# the rig has no waist joint, so this is a whole-body lean standing in for a waist bend.
-# It is also the constant that decides whether ex36 clears the
-# articulation floor at all:
+# IDLE_SWAY_DEG comes from "a mild sway through the waist", in two steps because the rig
+# has no waist joint.
 #
-#     turn 6 / swing 8 / sway 1.5  ->  19 px/frame   FAILS the 20 px floor
-#     turn 6 / swing 8 / sway 2.0  ->  20 px/frame
-#     turn 6 / swing 8 / sway 3.0  ->  26 px/frame
+# A mild waist bend is about 4 degrees -- the same order as the 6 degrees "subtly" buys the
+# head and chest in the same sentence group. Our `lean` is not a waist bend though: it
+# pivots at the FEET, measured, not assumed (leaning 4 degrees moves the foot 1.1 mm and
+# the head 0.1039 m, against 0.1038 m predicted for a pure foot pivot). So the same angle
+# moves the head more than twice as far as a waist bend would, and using it directly would
+# overstate the motion.
 #
-# It is left at 3.0, the value it was raised to during the fit, because lowering it is what
-# pushes ex36 under the floor -- which means one constant in the idle path is still not
-# derived from anything. A clause-faithful turn and swing do NOT on their own carry this
-# subject over a floor anchored on their measurements; the sway is making up the
-# difference. That is a real tension between the two anchors and it is recorded here
-# unresolved rather than hidden by a number that happens to work.
+# Converting by head displacement: a 4 degree waist bend rotates only the body above the
+# hip at 0.53h, moving the head (0.93 - 0.53) * h * sin(4) = 4.46 cm. A foot-pivot lean
+# moving the head equally is arcsin(0.0446 / (0.93 * h)) = 1.72 degrees. Hence 1.7.
+#
+# It was 3.0 -- the value the fit to their 47 px/frame left behind, and for a while the
+# constant that decided whether ex36 cleared a 20 px floor. That floor has since been
+# re-anchored on rigidity rather than on their amplitudes, so the two are no longer
+# entangled and this can be read from the clause like the other three.
 #
 # Both constants matter. The torso turn dominates the rendered mask change -- 286 px/frame
 # at full amplitude, 122 with the turn zeroed, 217 with the swing zeroed -- so a sweep that
@@ -171,7 +171,7 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 #
 IDLE_TURN_DEG = 6.0
 IDLE_SWING_DEG = 8.0
-IDLE_SWAY_DEG = 3.0
+IDLE_SWAY_DEG = 1.7
 # "a small balance adjustment through her hips and knees without stepping".
 IDLE_KNEE_DEG = 6.0
 
