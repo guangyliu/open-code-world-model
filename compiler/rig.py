@@ -93,6 +93,15 @@ def walk_pose(phase: float, *, stride_deg: float = 32.0, run: bool = False) -> P
     )
 
 
+# Where the rig's SILHOUETTE centroid sits, as a fraction of standing height. Measured by
+# rendering the standing rig and taking the mean row of its class-8 mask, then solving for
+# the aim height at which a screen-placement request lands on it: 0.96 m on a 1.75 m figure.
+# It is above the geometric half because the torso, head and arms carry more silhouette
+# area than the legs. `aim_screen_y` resolves against this, so that a request positions the
+# FIGURE rather than whatever point the lens happens to be aimed at.
+SILHOUETTE_CENTRE_FRAC = 0.549
+
+
 @dataclass
 class Human:
     """A rig instance: ground position, facing, and a pose."""

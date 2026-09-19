@@ -1642,20 +1642,51 @@ def t_aim_screen_y():
     ok = True
 
     def landed(fy, aim_height=0.9):
+        """Where the SILHOUETTE lands -- rendered, not the projection of the aim point.
+
+        The contract is a placement request: a request for 0.5 centres the figure. An
+        earlier version of this test projected the aim point instead, which is exactly the
+        quantity that was wrong: it passed while the same request moved 0.145 of frame
+        height as `aim_height` went 0.875 -> 1.20, because it never looked at the subject.
+        """
+        from compiler.render import render_frame
+        from world import compile as wc
+        from world.state import Entity, WorldState
+
         cam = FollowCamera(distance=2.4, height=1.7, aim_height=aim_height,
                            aim_screen_y=fy)
+        st = WorldState(seed=0)
+        st.add(Entity("s", "human", [0.0, 0.0, 0.0], size=[0.55, 1.75, 0.40], speed=0.0))
         pitches = []
-        for k in range(60):
-            c = cam.update(np.array([0.0, 0.0, 2.0 * k / FPS]), 0.0, 1.0 / FPS)
+        for _k in range(60):
+            c = cam.update(np.zeros(3), 0.0, 1.0 / FPS)
             pitches.append(c.pitch_deg)
-        tgt = np.array([0.0, -aim_height, 2.0 * 59 / FPS])
-        cp = c.to_camera(tgt)[0]
-        return float(cp[1] / cp[2] * c.focal_px + OUT_H / 2) / OUT_H, pitches
+        _z, ids = render_frame(c, wc.PrimitiveCache().build(st))
+        r = np.nonzero(ids == 8)[0]
+        return (float(r.mean() / ids.shape[0]) if r.size else float("nan")), pitches
 
+    # The request must land on itself. Tolerance 0.04 rather than 0.02, because the
+    # silhouette's projected centroid is not the projection of any single height: a 3-D
+    # figure foreshortens, so the height that centres it moves a little with stand-off, and
+    # a little more with pose. SILHOUETTE_CENTRE_FRAC is ONE measured constant covering
+    # every distance and pose, and the residual it leaves runs 0.012 to 0.038 across the
+    # cases here. The INVARIANCE assertion below is exact -- 0.000 -- and is held at 0.02,
+    # so this looser absolute bound cannot hide the defect the fix is about.
     for fy in (0.5, LOWER_THIRD, 1.0 / 3.0, 0.6):
         got, _ = landed(fy)
-        if abs(got - fy) > 0.02:
+        if abs(got - fy) > 0.04:
             print("     asked for %.3f, subject landed at %.3f" % (fy, got))
+            ok = False
+
+    # Invariance: the same request must land in the same place whatever the lens is aimed
+    # at. This is the defect -- placement resolved against `aim_height`, so a request moved
+    # 0.238 of frame height across the aim heights below while claiming to be a request.
+    for fy in (0.5, LOWER_THIRD):
+        got = [landed(fy, aim_height=ah)[0] for ah in (0.70, 0.875, 1.05, 1.20)]
+        spread = max(got) - min(got)
+        if spread > 0.02:
+            print("     request %.3f moved %.3f across aim_height 0.70..1.20: %s"
+                  % (fy, spread, " ".join("%.3f" % g for g in got)))
             ok = False
 
     # Negative: without the offset every request collapses to the boom's fixed point.
