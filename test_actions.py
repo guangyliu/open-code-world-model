@@ -1718,6 +1718,155 @@ def t_aim_screen_y():
     return ok
 
 
+def t_articulation_covers_animals_and_planted_subjects():
+    """Nothing in the rig animated an animal, or a subject standing still.
+
+    Two frozen subjects came out of this, and only one of them was visible as a still
+    window. `advance_gait` iterated `s.of_kind("human")`, so an animal never received a
+    `gait_phase` at all, and the quadruped branch of `_entity_shapes` has no animation term
+    -- the only trig in it is heading. ex31's stag walks 21.5 m at 4.2 m/s with rigid legs:
+    its class-8 mask is byte-identical across all 124 frames, and it passes
+    validate_conditions only because the BACKGROUND moves. The camel in the shipped take is
+    the same rig and was never noticed, because it is never seen from a camera locked to it.
+
+    The second is ex36, whose prompt plants the subject -- "remains planted ... without
+    stepping, feet fixed" -- while still describing motion: "subtly turns her head and upper
+    chest toward her right" and "her right hand swings a short distance beside her thigh".
+    Gait is driven by distance covered, so at speed 0 there is no phase and no motion.
+
+    Their own conditions say what articulation looks like at 336x192: the class-8 mask of
+    their planted ex36 changes by a median of 47 px per frame, and their plainest walk,
+    ex30, by 32. Ours was 0 for both ex31 and ex36.
+    """
+    import numpy as np
+
+    from world import compile as wc
+    from world.state import Entity, WorldState
+
+    ok = True
+
+    def stepped(kind, speed, n=8, **attrs):
+        """Run advance_gait n times and return the primitive geometry each frame."""
+        st = WorldState(seed=0)
+        st.add(Entity("subj", kind, [0.0, 0.0, 6.0], size=[0.55, 1.75, 0.40],
+                      speed=speed, attrs=dict(attrs)))
+        geo = []
+        for _k in range(n):
+            wc.advance_gait(st)
+            prims = wc.PrimitiveCache().build(st)
+            vals = []
+            for q in prims:
+                for a in ("a", "b", "centre", "radius"):
+                    v = getattr(q, a, None)
+                    vals.append(np.atleast_1d(0.0 if v is None else v).ravel())
+            geo.append(np.round(np.concatenate(vals), 5).tobytes())
+        return st.get("subj"), geo
+
+    # 1. An animal must receive a phase at all.
+    e, geo = stepped("animal", 3.0)
+    if e.attrs.get("gait_phase") is None:
+        print("     a walking animal received no gait_phase")
+        ok = False
+    elif len(set(geo)) == 1:
+        print(f"     a walking animal's geometry is identical across {len(geo)} frames: "
+              f"the quadruped has no animation term")
+        ok = False
+
+    # 2. A planted subject must still articulate.
+    for kind in ("human", "animal"):
+        e, geo = stepped(kind, 0.0)
+        if len(set(geo)) == 1:
+            print(f"     a planted {kind} is geometrically identical across {len(geo)} "
+                  f"frames; a live subject must never render a still")
+            ok = False
+
+    # 3. And idle must not leak into a walk: a moving subject's phase advances by exactly
+    #    the distance it covered, which is what makes the shipped take reproducible.
+    st = WorldState(seed=0)
+    st.add(Entity("w", "human", [0.0, 0.0, 6.0], size=[0.55, 1.75, 0.40], speed=2.0))
+    wc.advance_gait(st)
+    want = 2.0 * st.dt / st.params.get("stride_m", 1.5)
+    got = float(st.get("w").attrs.get("gait_phase", 0.0))
+    if abs(got - want) > 1e-9:
+        print(f"     a walking subject's gait_phase advanced {got:.6f}, expected {want:.6f}")
+        ok = False
+    if st.get("w").attrs.get("idle_phase"):
+        print("     a walking subject was given an idle phase")
+        ok = False
+
+    # A window whose subject never moves is not caught by the still-frame guard, because
+    # the BACKGROUND moves: ex31 passed validate_conditions with a class-8 mask that was
+    # byte-identical across all 124 frames. So the condition directory gets its own check.
+    import subprocess
+    import sys as _sys
+    import tempfile
+    from pathlib import Path as _P
+
+    from PIL import Image
+
+    import take_actions as _ta
+
+    root = _P(_ta.__file__).resolve().parent
+    H, W = 192, 336
+
+    def write(into, masks):
+        into.mkdir(parents=True, exist_ok=True)
+        for k, m in enumerate(masks):
+            d = np.where(m, 5.0, 10.0).astype(np.float32)
+            sm = np.where(m, 8, 4).astype(np.uint8)
+            # Background scenery that moves every frame, so the window is never still and
+            # the still-frame guard cannot fire. This is the ex31 shape exactly: a frozen
+            # subject carried across a scene that is moving behind it.
+            sm[150:170, (k * 17) % 300:(k * 17) % 300 + 18] = 5
+            d[:20] = 0.0
+            sm[:20] = 1
+            np.ascontiguousarray(d, dtype="<f4").tofile(into / f"{k:06d}.depth.f32")
+            Image.fromarray(np.ascontiguousarray(sm), "L").save(
+                into / f"{k:06d}.semantic_id.png")
+
+    def validates(into, n):
+        r = subprocess.run([_sys.executable, str(root / "validate_conditions.py"),
+                            str(into), "--expect", str(n)],
+                           capture_output=True, text=True, cwd=str(root))
+        return r.returncode == 0, r.stdout + r.stderr
+
+    def blob(cx, cy, rw=26, rh=34):
+        m = np.zeros((H, W), bool)
+        m[max(0, cy - rh):cy + rh, max(0, cx - rw):cx + rw] = True
+        return m
+
+    with tempfile.TemporaryDirectory() as td:
+        # Frozen subject, moving background -- the ex31 shape. Must be rejected.
+        d0 = _P(td) / "frozen"
+        write(d0, [blob(160, 110) for _k in range(8)])  # subject rigid, scene moving
+        good, out = validates(d0, 8)
+        if good:
+            print("     a subject frozen for the whole window validated clean")
+            ok = False
+
+        # Articulating subject: must pass, so the guard is not simply rejecting everything.
+        d1 = _P(td) / "moving"
+        write(d1, [blob(160 + (k % 3), 110 + (k % 2)) for k in range(8)])
+        good, out = validates(d1, 8)
+        if not good:
+            print(f"     an articulating subject was rejected: {out.strip()[-200:]}")
+            ok = False
+
+        # A subject too small to articulate visibly is exempt, not failed: ex34's aerial
+        # sentinel is 0.44% of frame, and any honest motion there is sub-pixel after the
+        # 2x2 pool. Theirs is 0.89% -- the gap is the subject's size, not its stillness.
+        d2 = _P(td) / "tiny"
+        write(d2, [blob(160, 110, rw=2, rh=2) for _k in range(8)])
+        good, out = validates(d2, 8)
+        if not good:
+            print(f"     a subject below the visibility floor was failed rather than "
+                  f"exempted: {out.strip()[-200:]}")
+            ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] articulation_covers_animals_and_planted_subjects")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1730,7 +1879,8 @@ if __name__ == "__main__":
              t_cache_matches_fresh_build, t_window_arithmetic,
              t_boom_holds_distance, t_aim_seeded_at_steady_state,
              t_framed_holds_the_opening_layout,
-             t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y]
+             t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y,
+             t_articulation_covers_animals_and_planted_subjects]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

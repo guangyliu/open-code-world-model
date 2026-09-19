@@ -51,6 +51,7 @@ class PrimitiveCache:
         """
         return (round(e.position[0], 4), round(e.position[1], 4), round(e.position[2], 4),
                 round(e.heading_deg, 3), round(float(e.attrs.get("gait_phase", 0.0)), 4),
+                round(float(e.attrs.get("idle_phase", 0.0)), 4),
                 round(float(e.attrs.get("scale", 1.0)), 4), tuple(e.size), e.alive,
                 round(e.speed, 4), e.kind, e.attrs.get("class_id"))
 
@@ -111,8 +112,13 @@ def _entity_shapes(e) -> list:
     if e.kind == "human":
         # p[1] is altitude (+Y down), so a rider or a flyer sits above the road. Ground
         # entities carry p[1] == 0 and are unchanged.
-        return rig.Human(position=np.array([p[0], p[1], p[2]]), facing_deg=e.heading_deg,
-                         pose=rig.walk_pose(e.attrs.get("gait_phase", 0.0), run=e.speed > 2.0),
+        walking = abs(e.speed) > 1e-9
+        idle = float(e.attrs.get("idle_phase", 0.0))
+        pose = (rig.walk_pose(e.attrs.get("gait_phase", 0.0), run=e.speed > 2.0)
+                if walking else rig.idle_pose(idle))
+        facing = e.heading_deg + (0.0 if walking else rig.idle_turn(idle))
+        return rig.Human(position=np.array([p[0], p[1], p[2]]), facing_deg=facing,
+                         pose=pose,
                          scale=float(e.attrs.get("scale", 1.0))).primitives()
     if e.kind == "vehicle":
         half = np.asarray(e.size, float) / 2.0
@@ -140,13 +146,22 @@ def _entity_shapes(e) -> list:
         out = [Capsule(back - fwd * L * 0.28, back + fwd * L * 0.22, body_r, class_id=9),
                Sphere(back + fwd * L * 0.02 + np.array([0.0, -body_r * 0.85, 0.0]),
                       body_r * 0.78, class_id=9)]
+        # Diagonal walk: the near-fore and off-hind legs swing together, a quarter cycle
+        # ahead of the other pair. Amplitude 0.11*L puts a 2.5 m stag's hoof through about
+        # a 0.55 m fore-aft arc, which is the stride such an animal covers at 4.2 m/s. The
+        # branch had no animation term at all before: the only trig in it was heading.
+        gp = 2 * np.pi * float(e.attrs.get("gait_phase", 0.0))
         for sx in (-1.0, 1.0):
             for fz, lean in ((0.20, 0.03), (-0.24, -0.03)):
+                diag = 0.0 if (sx > 0) == (fz > 0) else np.pi
+                swing = 0.11 * L * float(np.sin(gp + diag))
                 top = back + fwd * L * fz + side * (Wd * 0.28 * sx)
-                out.append(Capsule(top, top + np.array([0.0, Hh * 0.62, 0.0]) + fwd * lean * L,
-                                   body_r * 0.30, class_id=9))
+                foot = top + np.array([0.0, Hh * 0.62, 0.0]) + fwd * (lean * L + swing)
+                out.append(Capsule(top, foot, body_r * 0.30, class_id=9))
+        # At rest the legs are still, so the neck and head carry the idle instead.
+        nod = np.radians(4.0) * float(np.sin(2 * np.pi * float(e.attrs.get("idle_phase", 0.0))))
         neck0 = back + fwd * L * 0.30
-        neck1 = neck0 + fwd * L * 0.16 + np.array([0.0, -Hh * 0.34, 0.0])
+        neck1 = neck0 + fwd * L * 0.16 + np.array([0.0, -Hh * (0.34 + 0.06 * nod), 0.0])
         out.append(Capsule(neck0, neck1, body_r * 0.42, class_id=9))
         out.append(Sphere(neck1 + fwd * L * 0.07, body_r * 0.40, class_id=9))
         return out
@@ -196,11 +211,27 @@ def _stable_seed(eid: str) -> int:
 
 
 
+# One slow idle cycle per four seconds. The window is 124 frames at 24 fps, so a planted
+# subject moves through a little over one cycle -- continuous motion rather than a loop the
+# viewer can count.
+IDLE_HZ = 0.25
+
+
 def advance_gait(s: WorldState) -> None:
-    """Keep each walker's gait phase in step with the distance it actually covered."""
-    for e in s.of_kind("human"):
+    """Keep each walker's gait phase in step with the distance it covered, and give a
+    subject that is standing still an idle phase so it never renders as a still frame.
+
+    Animals were omitted entirely: this iterated `of_kind("human")`, so a quadruped never
+    received a phase at all and ex31's stag walked 21.5 m with rigid legs."""
+    for e in list(s.of_kind("human")) + list(s.of_kind("animal")):
         stride = s.params.get("stride_m", 1.5)
         e.attrs["gait_phase"] = float(e.attrs.get("gait_phase", 0.0)) + e.speed * s.dt / stride
+        # A planted subject covers no distance, so gait gives it nothing and it renders as
+        # one frame for the whole window. The idle channel runs on wall time instead, and
+        # ONLY at rest: a walking subject never receives an idle phase, which is what keeps
+        # every moving take bit-identical.
+        if abs(e.speed) <= 1e-9:
+            e.attrs["idle_phase"] = float(e.attrs.get("idle_phase", 0.0)) + IDLE_HZ * s.dt
 
 
 def caption_for(s: WorldState, appearance: dict, actions: list[str],

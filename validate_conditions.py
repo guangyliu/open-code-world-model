@@ -18,6 +18,8 @@ import numpy as np
 from PIL import Image
 
 NEAR_M, FAR_M = 0.3, 256.0
+ARTICULATION_MIN = 20           # px of class-8 mask change per frame; see the check below
+ARTICULATION_MIN_AREA = 0.005   # below this share of frame, articulation is sub-pixel
 W, H = 336, 192
 SEMANTIC_U = (32, 96, 160, 224)
 SEMANTIC_V = (43, 128, 213)
@@ -47,6 +49,7 @@ def main() -> int:
     far_frac, valid_frac, empties = [], [], []
     # Byte signature per frame, to catch a window that never changes. See below.
     sigs: set[bytes] = set()
+    subj: list = []                 # the class-8 mask per frame, for the articulation check
     for p in depths:
         k = int(os.path.basename(p).split(".")[0])
         d = np.fromfile(p, dtype="<f4")
@@ -59,6 +62,7 @@ def main() -> int:
 
         sigs.add(hashlib.md5(d.tobytes()).digest()
                  + hashlib.md5(s.tobytes()).digest())
+        subj.append(s == 8)
 
         if not np.all(np.isfinite(d)):
             fails.append(f"frame {k}: depth has non-finite values")
@@ -114,6 +118,35 @@ def main() -> int:
     if len(depths) > 1 and len(sigs) == 1:
         fails.append(f"all {len(depths)} frames are byte-identical: the window carries no "
                      f"temporal information")
+
+    # A live subject that never changes shape is a defect the still-frame check above
+    # cannot see, because the BACKGROUND moves: ex31 shipped a class-8 mask that was
+    # byte-identical across all 124 frames and validated clean, because its camera tracked
+    # a rigid-legged stag across a moving scene.
+    #
+    # ARTICULATION_MIN is 20 px of a 336x192 frame. The anchor is their own conditions:
+    # their planted subject (ex36, the one whose prompt says she turns her head and swings
+    # a hand without stepping) changes by a median of 47 px per frame, and their plainest
+    # walk (ex30) by 32. 20 sits below the quieter of those with margin, and far above the
+    # sub-pixel wobble that a token animation would produce.
+    #
+    # ARTICULATION_MIN_AREA exempts a subject too small to articulate visibly rather than
+    # failing it forever. At 0.5% of frame a body is about 320 px, and a few degrees of
+    # limb swing on it is sub-pixel after the 2x2 pool. Their aerial ex34 is 0.89% of frame
+    # with a median change of 6 px; ours is 0.44%. That gap is the subject's SIZE, not its
+    # stillness, and a blanket floor would either fail it forever or be set low enough to
+    # pass a wobble.
+    if len(subj) > 1:
+        area = float(np.median([m.sum() for m in subj])) / (W * H)
+        d8 = [int((subj[i] ^ subj[i - 1]).sum()) for i in range(1, len(subj))]
+        med8 = float(np.median(d8)) if d8 else 0.0
+        if area >= ARTICULATION_MIN_AREA and med8 < ARTICULATION_MIN:
+            fails.append(f"subject articulation {med8:.0f} px/frame is below the "
+                         f"{ARTICULATION_MIN} px floor at {area:.2%} of frame: the subject "
+                         f"is rigid even though the window is not still")
+        print(f"subject motion    {med8:.0f} px/frame at {area:.2%} of frame"
+              + ("  (below the visibility floor, exempt)"
+                 if area < ARTICULATION_MIN_AREA else ""))
 
     print(f"frames            {len(depths)}")
     print(f"distinct frames   {len(sigs)}")
