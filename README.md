@@ -265,6 +265,12 @@ adherence_sheet.py      overlay proxy class boxes on rendered video (needs PyAV)
 test_*.py               scenario, renderer and caption tests
 ```
 
+The generator needs only numpy and pillow. The analysis tools need more, and they
+are not on the quick-start path: `inverse/` imports **scipy**, and
+`adherence_sheet.py` imports **PyAV** to read mp4s. `pip install scipy av` if you
+want those.
+
+
 ---
 
 ## License and attribution
