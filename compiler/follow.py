@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import rig
 from .render import OUT_H, OUT_W, Camera
 
 
@@ -49,6 +50,12 @@ class FollowCamera:
     # aim_height 0.875, half the figure, the body centre lands at 0.667. So a scene that
     # wants the SUBJECT at a screen position must aim at the middle of it.
     aim_screen_y: float = 0.5
+    # Standing height of the subject being framed, so `aim_screen_y` can resolve against
+    # its silhouette centroid instead of against the aim point. Without this a placement
+    # request was not a placement request at all: it applied a fixed axis offset and left
+    # the result wherever `aim_height` happened to put it, so the same request moved 0.145
+    # of frame height when aim_height went 0.875 -> 1.20.
+    subject_height: float = 1.75
     boom_tau: float = 0.55
     aim_tau: float = 0.12
     zeta: float = 0.55          # boom damping ratio; < 1 overshoots, 1 is critical
@@ -129,6 +136,10 @@ class FollowCamera:
         return float(np.degrees(np.arctan(
             (self.aim_screen_y - 0.5) * OUT_H / self.focal_px)))
 
+    def _place_h(self) -> float:
+        """Height above the subject's feet that `aim_screen_y` positions on screen."""
+        return self.subject_height * rig.SILHOUETTE_CENTRE_FRAC
+
     def _desired(self, target: np.ndarray, heading_deg: float) -> np.ndarray:
         """Boom anchor: behind the subject along its heading, offset to one side.
 
@@ -202,7 +213,8 @@ class FollowCamera:
             yaw0 = np.degrees(np.arctan2(aim0[0], aim0[2]))
             d0 = (yaw0 - self._yaw + 180.0) % 360.0 - 180.0
             self._yaw += d0 * (1.0 - np.exp(-dt / max(self.aim_tau, 1e-6)))
-            pitch0 = np.degrees(np.arctan2(-aim0[1], np.hypot(aim0[0], aim0[2])))
+            place0 = target + np.array([0.0, -self._place_h(), 0.0]) - self._pos
+            pitch0 = np.degrees(np.arctan2(-place0[1], np.hypot(place0[0], place0[2])))
             return self._maybe_lock(Camera(
                 focal_px=self.focal_px, position=self._pos.copy(),
                 pitch_deg=float(np.clip(pitch0 + self._pitch_offset(),
@@ -248,7 +260,11 @@ class FollowCamera:
         # protagonist left the top of the frame at 425 and never came back (v = -1101 px
         # on a 192 px frame at 470). Elevation is what makes flight read, so the camera
         # has to be allowed to look up.
-        pitch = np.degrees(np.arctan2(-aim[1], np.hypot(aim[0], aim[2])))
+        # Vertical placement resolves against the figure, not against the aim point, so
+        # a request for 0.5 centres the SILHOUETTE whatever `aim_height` is set to. The
+        # aim point still fixes the yaw and still means what it says in world space.
+        place = target + np.array([0.0, -self._place_h(), 0.0]) - self._pos
+        pitch = np.degrees(np.arctan2(-place[1], np.hypot(place[0], place[2])))
 
         return self._maybe_lock(Camera(
             focal_px=self.focal_px, position=self._pos.copy(),
