@@ -1,9 +1,15 @@
 """Third-person follow camera.
 
-Step cam_follow measured the released behaviour: the subject is held at a stable,
-off-centre screen position (cx sd ~10 px of 336) while the camera-subject distance
-breathes by ~23%. That is a camera whose aim is stiff and whose boom is soft, so the
-two axes get separate time constants rather than one rigid rig.
+The released behaviour, re-measured per frame over window 0 rather than in aggregate: the
+subject is held at a stable screen position AND at a stable size. On ex30 their subject-x
+sd is 0.003 of frame width, subject-y 0.001, and the area coefficient of variation 0.021 --
+a tight, steady follow for all 124 frames.
+
+An earlier reading of the same takes concluded the boom "breathes by ~23%" and should
+therefore be soft. That was an artefact of aggregating across takes with different boom
+lengths; per frame within a take it does not breathe. The two axes still get separate time
+constants, because the aim must be stiffer than the boom, but the boom's job is to HOLD the
+stand-off, not to lag behind it.
 """
 from __future__ import annotations
 
@@ -66,7 +72,8 @@ class FollowCamera:
     # meant for a 14 m climb would pull the boom 3.5 m back for a man sitting on a camel.
     rise_knee: float = 2.50
     _pos: np.ndarray | None = field(default=None, repr=False)
-    _vel: np.ndarray | None = field(default=None, repr=False)
+    _vel: np.ndarray | None = field(default=None, repr=False)  # relative to the anchor
+    _off: np.ndarray | None = field(default=None, repr=False)  # camera pos minus anchor
     _yaw: float | None = field(default=None, repr=False)
 
     def _maybe_lock(self, cam: Camera) -> Camera:
@@ -131,7 +138,10 @@ class FollowCamera:
             self._dist += float(np.clip(self.push_to - self._dist, -step, step))
         want = self._desired(target, heading_deg)
         if self._pos is None:
+            # Zero offset and zero relative velocity: frame 0 is already the steady state,
+            # so there is nothing to spring in from.
             self._pos, self._vel, self._yaw = want.copy(), np.zeros(3), heading_deg
+            self._off = np.zeros(3)
         if self.mode == "hold":
             # Locked off: the rig keeps its pose and the subject moves through the frame.
             # The aim still tracks, which is what their "holds a steady vantage while she
@@ -145,13 +155,32 @@ class FollowCamera:
                 focal_px=self.focal_px, position=self._pos.copy(),
                 pitch_deg=float(np.clip(pitch0, self.pitch_min, self.pitch_max)),
                 yaw_deg=float(self._yaw + self._yaw_offset())))
-        # Second-order spring-damper. A first-order exponential lag is strictly
-        # overdamped and cannot overshoot, so it caps the distance excursion far below
-        # what the released takes show; zeta < 1 is what reaches their spread.
+        # Second-order spring-damper, run in the frame that MOVES WITH the boom anchor.
+        #
+        # Damping the camera's ABSOLUTE velocity leaves a steady-state lag. For the camera
+        # to travel at the subject's speed v the acceleration must vanish, which needs
+        # w0^2 (want - pos) = 2 zeta w0 v, so the rig settles 2 zeta v / w0 metres behind
+        # the anchor and stays there. At these constants that is 1.15 m behind a 1.9 m/s
+        # walk, which doubles ex30's 1.15 m boom and quarters the subject's apparent area.
+        # It also produced what looked like a startup transient: frame 0 is the only frame
+        # framed correctly, because `_pos` is initialised at `want`, and every later frame
+        # has sagged away from it.
+        #
+        # Measuring both the error and the velocity against the anchor makes constant-
+        # velocity motion indistinguishable from standing still, which is what following
+        # means. The spring still overshoots on genuine CHANGES of pose -- turns, a climb,
+        # a push -- which is what zeta < 1 is for; it just no longer treats "the subject is
+        # walking" as a change to be lagged. `_vel` is therefore a velocity RELATIVE to the
+        # anchor, and zero is the correct value to initialise it to.
+        # `_off` is CARRIED, not recomputed from `_pos - want`: recomputing it re-injects
+        # the anchor's motion every frame and collapses back to the absolute-velocity form
+        # algebraically, changing nothing. Integrating the offset itself is what makes
+        # `_vel` a velocity relative to the anchor.
         w0 = 1.0 / max(self.boom_tau, 1e-6)
-        acc = w0 * w0 * (want - self._pos) - 2.0 * self.zeta * w0 * self._vel
+        acc = -w0 * w0 * self._off - 2.0 * self.zeta * w0 * self._vel
         self._vel = self._vel + acc * dt
-        self._pos = self._pos + self._vel * dt
+        self._off = self._off + self._vel * dt
+        self._pos = want + self._off
 
         # Aim height sets the pitch, and pitch decides whether any sky is in frame at all.
         # Aiming at 0.9 m from a 1.83 m camera only 1.9 m away pitches down ~26 degrees,
