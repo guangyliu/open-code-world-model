@@ -102,6 +102,46 @@ def walk_pose(phase: float, *, stride_deg: float = 32.0, run: bool = False) -> P
 SILHOUETTE_CENTRE_FRAC = 0.549
 
 
+# Idle amplitudes. Two sources, because the clause fixes the KIND of motion and their own
+# conditions fix its SCALE.
+#
+# The kind comes from ex36's timeline: the subject "remains planted ... without stepping,
+# feet fixed" while she "subtly turns her head and upper chest toward her right" and "her
+# right hand swings a short distance beside her thigh". So it is a torso turn, an arm
+# swing and a breathing sway, with the hips and knees pinned at zero -- that is what "feet
+# fixed" means, and it is why this is a separate channel from the gait.
+#
+# The scale comes from their rendering of that same shot. A first pass read "subtly" and
+# "a short distance" as 6 and 8 degrees, which moved the class-8 mask by 19 px per frame
+# at 336x192 -- below what their own planted subject shows, which is a median of 47 px on
+# the very example whose prompt these words come from. Their number is a measurement of
+# what those words look like at this resolution on this shot, the same kind of anchor
+# their stand-off gave boom_len, so the amplitudes are scaled to it. 14 degrees of torso
+# turn over a four-second cycle is still a gentle look-around, and an 18 degree shoulder
+# swing moves the hand about 10 cm beside the thigh.
+IDLE_TURN_DEG = 14.0
+IDLE_SWING_DEG = 18.0
+IDLE_SWAY_DEG = 3.0
+
+
+def idle_pose(phase: float) -> Pose:
+    """Articulation for a subject that is standing still rather than walking.
+
+    Gait is driven by distance covered, so a planted subject had no phase and no motion,
+    and rendered as a single frame repeated for the whole window. This is the channel that
+    runs instead -- upper body only, legs untouched.
+    """
+    s = np.sin(2 * np.pi * phase)
+    c = np.cos(2 * np.pi * phase)
+    return Pose(l_shoulder=-IDLE_SWING_DEG * s, r_shoulder=IDLE_SWING_DEG * s,
+                l_elbow=12.0, r_elbow=12.0, lean=2.0 + IDLE_SWAY_DEG * c)
+
+
+def idle_turn(phase: float) -> float:
+    """Degrees the upper body turns off its heading. Paired with `idle_pose`."""
+    return IDLE_TURN_DEG * float(np.sin(2 * np.pi * phase))
+
+
 @dataclass
 class Human:
     """A rig instance: ground position, facing, and a pose."""
