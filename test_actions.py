@@ -1321,6 +1321,73 @@ def t_boom_holds_distance():
     return ok
 
 
+def t_aim_seeded_at_steady_state():
+    """Frame 0 must already be in follow position. A STATIONARY subject is the cleanest
+    case: nothing about the scene changes, so every frame must be framed identically.
+
+    It is not. `update()` seeds `self._yaw = heading_deg`, the subject's heading. But
+    `shoulder_offset` puts the camera 0.45 m to one side of the boom axis, so the yaw that
+    actually looks at the aim point differs from the heading by atan(shoulder / boom) --
+    21.4 degrees at a 1.15 m boom. `aim_tau` then eases that error out over about 18
+    frames, sliding the subject roughly 57 px across a 336 px frame while nothing in the
+    world has moved.
+
+    Measured at HEAD with a stationary subject and a 1.15 m boom:
+
+        f     yaw      pitch      dist    bbox cols
+        0   -5.1831  -27.0288   2.2077     46..185
+        5  -17.3342  -27.0288   2.2077     90..222
+       30  -21.3667  -27.0288   2.2077    103..234
+
+    Distance and pitch are constant to four decimals from frame 0, so the boom spring is
+    seeded correctly and never oscillates -- this is the aim axis alone, and it is a seeding
+    error rather than a response to anything. The right fix is to seed the yaw from the aim
+    direction. Shrinking `aim_tau` would hide it faster without removing it, and would
+    stiffen tracking everywhere else.
+    """
+    from compiler.follow import FollowCamera
+    from compiler.render import OUT_H, OUT_W, screen_bbox
+
+    ok = True
+    dt = 1.0 / FPS
+    tgt = np.zeros(3)
+    aim_pt = tgt + np.array([0.0, -0.9, 0.0])
+
+    cam = FollowCamera(distance=1.15, boom_tau=0.55, zeta=0.55, aim_tau=0.15, height=1.83)
+    poses = []
+    for _k in range(31):
+        c = cam.update(tgt, 0.0, dt)
+        poses.append((screen_bbox(c, aim_pt, 0.45, OUT_W, OUT_H), c.yaw_deg, c.pitch_deg,
+                      float(np.linalg.norm(c.position - tgt))))
+
+    bb0, yaw0, pitch0, d0 = poses[0]
+    bb30, yaw30, pitch30, d30 = poses[30]
+
+    if bb0 != bb30:
+        print(f"     stationary subject reframed between frame 0 and frame 30: "
+              f"{bb0} -> {bb30}")
+        ok = False
+    if abs(yaw30 - yaw0) > 1e-6:
+        print(f"     aim yaw slid {yaw0:.4f} -> {yaw30:.4f} deg with nothing moving")
+        ok = False
+
+    # Every frame, not just the two endpoints: a steady state has no interior excursion.
+    moved = [k for k, (bb, _y, _p, _d) in enumerate(poses) if bb != bb0]
+    if moved:
+        print(f"     {len(moved)} of 31 frames differ from frame 0, first at {moved[0]}")
+        ok = False
+
+    # The boom axes were never the problem here; guard them so a fix that "works" by
+    # disturbing distance or pitch is not mistaken for this one.
+    if abs(d30 - d0) > 1e-9 or abs(pitch30 - pitch0) > 1e-9:
+        print(f"     boom disturbed: dist {d0:.4f}->{d30:.4f}, pitch {pitch0:.4f}->{pitch30:.4f}")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] aim_seeded_at_steady_state "
+          f"(yaw drift {yaw30 - yaw0:+.4f} deg, {len(moved)}/31 frames reframed)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1331,7 +1398,7 @@ if __name__ == "__main__":
              t_visibility_counts_near_objects, t_checkdefs_scope,
              t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract,
              t_cache_matches_fresh_build, t_window_arithmetic,
-             t_boom_holds_distance]
+             t_boom_holds_distance, t_aim_seeded_at_steady_state]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
