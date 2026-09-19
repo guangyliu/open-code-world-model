@@ -70,9 +70,7 @@
   <h1>cwm-proxy</h1>
   <p class="tag">The open proxy generator for Code World Model — the half that wasn't released.</p>
   <div class="links">
-    <a href="https://github.com/buaacyw/code-world-model">Original project</a>
-    <a href="https://arxiv.org/abs/2608.25927">Paper (arXiv 2608.25927)</a>
-    <a href="https://buaacyw.github.io/cwm/">Their project page</a>
+    <a href="https://github.com/guangyliu/cwm-proxy">Repository</a>
   </div>
 </header>
 
@@ -80,8 +78,7 @@
   <h2>What this is</h2>
   <p class="sub">Code World Model drives a video model with a <em>proxy</em>: a per-frame
   stream of metric depth and semantic-class maps that tells the model where everything is.
-  The paper releases the inference code, the LoRA, and 40 example proxies. It does not release
-  the thing that makes proxies. This is an independent implementation of that missing half —
+  The released code runs inference on proxies; nothing released builds them. So we built one —
   a scripted world simulator and CPU ray tracer, NumPy only, no weights, no GPU.</p>
 
   <div class="claim">
@@ -93,17 +90,6 @@
     their own recovered point cloud costs 0.03% depth error; our fitted primitives cost 0.60%
     — about 20× worse. That is the honest size of the gap.</p>
   </div>
-</section>
-
-<section class="wrap">
-  <h2>A complete take</h2>
-  <p class="sub">484 frames, 20.2 s, five windows joined with a 34-frame pinned overlap.
-  The protagonist walks, boards a cart, drives, dismounts onto a camel, rides, and flies —
-  every action scripted in the proxy, every caption compiled from the same simulation.</p>
-  <figure>
-    <video src="video/v3.mp4" controls loop muted playsinline preload="metadata"></video>
-    <figcaption>Proxy authored in ~25 s on CPU. Video: MiniMax-H3 with the CWM LoRA, 9 steps.</figcaption>
-  </figure>
 </section>
 
 <section class="wrap">
