@@ -28,12 +28,23 @@ def frame_at(path, index):
     c.close(); raise IndexError(index)
 
 
-def proxy_boxes(npz, frame, cls=10, min_px=15, x_gap=6):
-    """Bounding boxes of one semantic class in the proxy, normalised, with median depth."""
+def proxy_boxes(npz, frame, cls=10, min_px=15, x_gap=6, family="metric"):
+    """Bounding boxes of one semantic class in the proxy, normalised, with median depth.
+
+    `family` must be stated. It used to be inferred with
+    `dep.dtype != np.float32 or dep.max() > 1000`, which cannot work: BOTH released
+    families store float32, so the dtype half never fires, and the max half asks whether
+    any pixel in the frame exceeds 1000 -- a frame property, not a format one. A metric
+    frame containing a single distant sliver was therefore decoded as gray16, and a blob
+    at a true 40.0 m was reported at 254.9 m because four rows elsewhere sat at 1500 m.
+    The comment three lines down already said the families "are told apart by the
+    example's metadata, never by dtype alone", which is exactly what the code was doing.
+    """
     z = np.load(npz); sem = z["semantic_id"]; dep = z["depth"]
-    if dep.dtype != np.float32 or dep.max() > 1000:
-        # uint16 files store fixed-log codes, not metres; the two are told apart by the
-        # example's metadata, never by dtype alone.
+    if family not in ("metric", "gray16"):
+        raise ValueError(f"family must be 'metric' or 'gray16', got {family!r}; it comes "
+                         f"from the example's metadata.json depth_format")
+    if family == "gray16":
         near, far = 0.3, 256.0
         sc = math.log(far) - math.log(near)
         dep = np.where(dep == 0, 0.0, np.exp(math.log(far) - dep.astype(np.float64) / 65535.0 * sc))
@@ -66,9 +77,12 @@ def main() -> int:
     # boxing vehicles for a camel shot silently draws nothing.
     ap.add_argument("--cls", type=int, default=10)
     ap.add_argument("--min-px", type=int, default=15)
+    ap.add_argument("--family", choices=("metric", "gray16"), default="metric",
+                    help="condition family, from the example's metadata.json depth_format; "
+                         "never inferred, because both families store float32")
     a = ap.parse_args()
 
-    boxes = proxy_boxes(a.npz, a.frame, cls=a.cls, min_px=a.min_px)
+    boxes = proxy_boxes(a.npz, a.frame, cls=a.cls, min_px=a.min_px, family=a.family)
     print(f"proxy frame {a.frame}: {len(boxes)} object boxes of class {a.cls}")
     if not boxes:
         print("  no boxes for this class in this frame; the overlay would be empty")

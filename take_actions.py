@@ -165,6 +165,21 @@ def simulate(check: bool = True):
     return plan, s, inv
 
 
+_PRIM_CACHE = None
+
+
+def _cache():
+    """One cache per worker process.
+
+    `PrimitiveCache()` was constructed fresh at every call, so it never cached anything --
+    each frame rebuilt every primitive and the class might as well not have existed.
+    """
+    global _PRIM_CACHE
+    if _PRIM_CACHE is None:
+        _PRIM_CACHE = wc.PrimitiveCache()
+    return _PRIM_CACHE
+
+
 def _init_worker():
     for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
               "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"):
@@ -177,9 +192,13 @@ def _render_one(job):
     focal, pos, pitch, yaw, roll = cam_t
     cam = Camera(focal_px=focal, position=np.array(pos), pitch_deg=pitch,
                  yaw_deg=yaw, roll_deg=roll)
-    z, ids = render_frame(cam, wc.PrimitiveCache().build(st))
-    writer.write_frame(Path(cond), k, z, ids)
-    return k
+    z, ids = render_frame(cam, _cache().build(st))
+    rep = writer.write_frame(Path(cond), k, z, ids)
+    # write_frame returns what it had to clamp. Discarding it hid the fact that a median
+    # 4.7% and a maximum 14.0% of pixels are pinned to exactly 256 m: the fixed-log encoder
+    # maps anything at or beyond the far plane to code 0, the sky code, so a clamped pixel
+    # is a pixel whose depth the model cannot see.
+    return k, float(rep.get("far_clamped_frac", 0.0))
 
 
 def main() -> int:
@@ -216,10 +235,18 @@ def main() -> int:
         # when the camera is among the vegetation and 0.3 s when it is looking down an open
         # road -- and the expensive frames come in runs. Handing out blocks of four drops a
         # whole run on one worker while the rest idle.
-        for _ in pool.imap_unordered(_render_one, [(str(cond), *p) for p in plan], chunksize=1):
+        clamped = []
+        for _k, frac in pool.imap_unordered(_render_one,
+                                            [(str(cond), *p) for p in plan], chunksize=1):
+            clamped.append(frac)
             done += 1
             if done % 120 == 0:
                 print(f"  {done}/{FRAMES}", flush=True)
+    if clamped:
+        import statistics
+        print(f"far-plane clamping: median {statistics.median(clamped) * 100:.1f}% of "
+              f"pixels, max {max(clamped) * 100:.1f}% -- these are written at exactly "
+              f"{writer.FAR_M:g} m and encode to the sky code")
     s.save(out_dir / "final_state.json")
     print(f"render took {time.time()-t0:.0f}s -> {cond}")
     return 0

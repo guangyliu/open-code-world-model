@@ -18,7 +18,6 @@ from compiler.follow import FollowCamera
 from .state import Entity, WorldState
 
 FPS = 24
-ACTIVE = ["waypoints", "locomotion", "separation", "fatigue"]
 
 
 @dataclass
