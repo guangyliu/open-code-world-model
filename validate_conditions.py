@@ -67,6 +67,21 @@ def main() -> int:
         if s.max() > 11:
             fails.append(f"frame {k}: semantic id {s.max()} outside 0-11")
 
+        # The format contract, and the one relation the writer actually enforces:
+        # semantic == 1 means "no hit", and a no-hit pixel has depth exactly 0. Neither
+        # direction was checked here, so a frame could carry sky with a depth on it, or a
+        # hit pixel labelled sky, and still be called clean. Both are how a malformed DUV
+        # reaches the model looking plausible.
+        sky = s == 1
+        sky_with_depth = int((sky & (d > 0)).sum())
+        hit_called_sky = int((~sky & (d == 0)).sum())
+        if sky_with_depth:
+            fails.append(f"frame {k}: {sky_with_depth} pixels are semantic 1 (sky) but "
+                         f"carry depth > 0")
+        if hit_called_sky:
+            fails.append(f"frame {k}: {hit_called_sky} pixels have depth 0 but are not "
+                         f"semantic 1 (sky)")
+
         vf = float((d > 1e-3).mean())
         valid_frac.append(vf)
         far_frac.append(float((d >= FAR_M).mean()))

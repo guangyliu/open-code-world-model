@@ -22,10 +22,14 @@ ROAD_LIFT = 0.02      # metres the road surface sits above the ground plane
 class PrimitiveCache:
     """Rebuild only the entities whose transform changed.
 
-    Rebuilding every primitive each frame dominated batch generation: a 43-clump scene
-    re-seeds an RNG and allocates ~475 spheres per frame, which cost roughly three times
-    the ray tracing itself. Static scenery and parked vehicles never move, so their
-    primitives are built once and reused.
+    Static scenery and parked vehicles never move, so their primitives are built once and
+    reused; only entities whose transform changed are rebuilt.
+
+    The docstring used to claim rebuilding cost "roughly three times the ray tracing
+    itself". Measured on the shipped scene it is about 1% -- see the figure in the commit
+    that corrected this. The class is still worth having (it is free, and the saving grows
+    with clump count), but it was being constructed fresh at every call site, so it had
+    never cached anything at all.
     """
 
     def __init__(self):
@@ -179,49 +183,6 @@ def _stable_seed(eid: str) -> int:
     compared only the state JSON -- kept passing."""
     return zlib.crc32(eid.encode("utf-8")) % 10_000
 
-
-def primitives(s: WorldState, *, ground_class: int = 0) -> list:
-    """World state -> proxy primitives, using the vocabulary measured in SPEC 5.
-
-    The ground defaults to void_unknown, not road_paved. SPEC section 4 measured
-    road_paved at 10.0% mean over the released takes while void_unknown holds 58.9%:
-    most of their ground is unlabelled geometry, and a road is a strip laid on it.
-    Painting the whole ground plane as road pushes road_frac to 0.75+, far outside
-    the released range.
-    """
-    out = [Plane(np.zeros(3), np.array([0.0, -1.0, 0.0]), class_id=ground_class)]
-    road = s.params.get("road")
-    if road:
-        half = np.array([road["half_width"], 0.06, road["half_length"]])
-        out.append(Box(np.array([road.get("x", 0.0), -0.03, road["centre_z"]]), half,
-                       class_id=4))
-    for e in s.entities.values():
-        if not e.alive:
-            continue
-        p = e.pos.copy()
-        if e.kind == "human":
-            phase = e.attrs.get("gait_phase", 0.0)
-            out += rig.Human(position=np.array([p[0], 0.0, p[2]]), facing_deg=e.heading_deg,
-                             pose=rig.walk_pose(phase, run=e.speed > 2.0),
-                             scale=float(e.attrs.get("scale", 1.0))).primitives()
-        elif e.kind == "vehicle":
-            half = np.asarray(e.size, float) / 2.0
-            th = np.radians(e.heading_deg)
-            axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
-            out += wireframe_box([p[0], -half[1], p[2]], half, axes)
-        elif e.kind == "scenery":
-            # Buildings and terrain masses. SPEC section 4: the released proxies never use
-            # building_structure (6) or terrain (3) -- every such mass is void_unknown (0),
-            # which is the dominant class at 58.9% and carries valid depth.
-            half = np.asarray(e.size, float) / 2.0
-            th = np.radians(e.heading_deg)
-            axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
-            out.append(Box(np.array([p[0], -half[1], p[2]]), half, axes, class_id=0))
-        elif e.kind == "vegetation":
-            out += vegetation_clump([p[0], -e.size[1] / 2.0, p[2]], e.size[0] / 2.0,
-                                    aspect=float(e.size[1] / max(e.size[0], 1e-6)),
-                                    seed=_stable_seed(e.eid))
-    return out
 
 
 def advance_gait(s: WorldState) -> None:

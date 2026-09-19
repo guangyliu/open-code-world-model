@@ -252,7 +252,7 @@ Named, because you will hit them:
 ```
 compiler/               ray tracer, camera, primitives, DUV encoding, rig
 world/                  entities, rules, actions, invariants, caption compiler
-probe/                  geometry and estimator helpers used by compiler/roundtrip.py
+probe/                  geometry and estimator helpers, exercised by the tests
 inverse/                inverse-rendering probe, its 25 scripts and its findings
 portb/                  MiniMax-H3 driver and multi-window retake continuity
 docs/                   the six comparison figures

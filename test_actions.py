@@ -1060,6 +1060,72 @@ def t_fit_ground_refuses_z_depth():
     return ok
 
 
+def t_validate_checks_sky_contract():
+    """validate_conditions must check the one relation the writer treats as the contract.
+
+    semantic == 1 means no hit, and a no-hit pixel has depth exactly 0. write_frame
+    enforces it on the way out; the independent cold re-read never checked it, so a
+    conditions directory produced by anything other than write_frame -- a hand edit, a
+    different writer, a partial copy -- could carry sky with depth on it, or a hit pixel
+    labelled sky, and still be reported clean.
+    """
+    import subprocess
+    import sys as _sys
+    import tempfile
+    from pathlib import Path
+
+    import numpy as np
+    from PIL import Image
+
+    import take_actions as _ta
+
+    root = Path(_ta.__file__).resolve().parent
+    ok = True
+
+    def write_raw(d, sem, into):
+        into.mkdir(parents=True, exist_ok=True)
+        np.ascontiguousarray(d, dtype="<f4").tofile(into / "000000.depth.f32")
+        Image.fromarray(np.ascontiguousarray(sem, dtype=np.uint8), "L").save(
+            into / "000000.semantic_id.png")
+
+    def validates(into):
+        r = subprocess.run([_sys.executable, str(root / "validate_conditions.py"),
+                            str(into), "--expect", "1"],
+                           capture_output=True, text=True, cwd=str(root))
+        return r.returncode == 0, r.stdout
+
+    H, W = 192, 336
+    good_d = np.full((H, W), 10.0, np.float32)
+    good_s = np.full((H, W), 4, np.uint8)
+    good_d[:20] = 0.0          # a sky band, depth exactly zero
+    good_s[:20] = 1
+
+    cases = [
+        (good_d.copy(), good_s.copy(), True, "a well-formed frame"),
+        None, None,
+    ]
+    bad1_d, bad1_s = good_d.copy(), good_s.copy()
+    bad1_d[5, 5] = 42.0                    # sky pixel carrying a depth
+    cases[1] = (bad1_d, bad1_s, False, "sky carrying depth")
+    bad2_d, bad2_s = good_d.copy(), good_s.copy()
+    bad2_d[100, 100] = 0.0                 # hit pixel at depth zero, not labelled sky
+    cases[2] = (bad2_d, bad2_s, False, "a depth-0 pixel not labelled sky")
+
+    for d, sem, want_pass, why in cases:
+        with tempfile.TemporaryDirectory() as td:
+            into = Path(td) / "conditions"
+            write_raw(d, sem, into)
+            passed, out = validates(into)
+            if passed != want_pass:
+                verb = "rejected" if want_pass else "accepted"
+                print(f"     validate_conditions {verb} {why}")
+                ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] validate_checks_sky_contract "
+          f"({len(cases)} frames)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1068,7 +1134,7 @@ if __name__ == "__main__":
              t_water_surface, t_class_vocabulary, t_camera_modes,
              t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
              t_visibility_counts_near_objects, t_checkdefs_scope,
-             t_fit_ground_refuses_z_depth]
+             t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
