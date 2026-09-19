@@ -1245,6 +1245,82 @@ def t_window_arithmetic():
     return ok
 
 
+def t_boom_holds_distance():
+    """A follow rig must frame a subject walking at constant speed the way it frames a
+    stationary one. Ours falls behind, and the fall-back IS the startup transient.
+
+    The spring damped the camera's ABSOLUTE velocity: acc = w0^2 (want - pos) - 2 z w0 vel.
+    For the camera to travel at the subject's speed v the acceleration must be zero, so
+    w0^2 (want - pos) = 2 z w0 v and the rig settles a fixed 2 z v / w0 metres BEHIND the
+    boom anchor. At the shipped constants (boom_tau 0.55, zeta 0.55) that is 1.15 m behind
+    a 1.9 m/s walk -- which doubles ex30's 1.15 m boom and quarters the subject's apparent
+    area. Frame 0 is the only frame framed correctly, because the camera is initialised at
+    `want`; every later frame has sagged. That is why ex30 opens at 14.1% of frame and
+    settles near 3%, and why its subject-y swings 0.67 -> 0.39 -> 0.63 on the way.
+
+    Note on scope, because the obvious test is not enough on its own: a stationary subject
+    shows no DISTANCE transient, since `want` never moves and pos == want, vel == 0 is
+    already the fixed point -- the unfixed rig holds 2.208 m at frames 0, 30 and 123 to the
+    last digit. It does NOT follow that a stationary subject is framed steadily. The aim yaw
+    is seeded separately and wrongly and slides the subject about 57 px sideways over those
+    same 30 frames; that is a different defect on a different axis, and it is covered by
+    `t_aim_seeded_at_steady_state`. This test is about the boom's stand-off, so its
+    discriminator has to be a subject that walks. The stationary case below is a regression
+    guard for the boom only, and it passes both before and after.
+    """
+    from compiler.follow import FollowCamera
+
+    ok = True
+    dt = 1.0 / FPS
+    D, SPEED = 1.15, 1.9
+
+    def track(v, n=124):
+        """Offset of the camera from the subject, in the subject's own frame."""
+        cam = FollowCamera(distance=D, boom_tau=0.55, zeta=0.55, aim_tau=0.15, height=1.83)
+        pos, out = np.zeros(3), []
+        for _k in range(n):
+            c = cam.update(pos, 0.0, dt)
+            out.append(c.position - pos)
+            pos = pos + np.array([0.0, 0.0, v * dt])
+        return np.array(out)
+
+    # 1. Regression guard: a stationary subject was never the broken case.
+    st = track(0.0)
+    still = float(np.abs(np.linalg.norm(st[30]) - np.linalg.norm(st[0])))
+    if still > 1e-9:
+        print(f"     stationary subject drifted {still:.4f} m between frames 0 and 30")
+        ok = False
+
+    # 2. The discriminator: constant velocity must be framed like stationary.
+    mv = track(SPEED)
+    n0, n30 = float(np.linalg.norm(mv[0])), float(np.linalg.norm(mv[30]))
+    if abs(n30 - n0) > 0.02:
+        print(f"     walking subject: stand-off {n0:.3f} m at frame 0 but {n30:.3f} m at "
+              f"frame 30, a {n30 - n0:+.3f} m sag")
+        ok = False
+
+    # 3. And it must still hold once settled, not merely return somewhere.
+    settled = np.linalg.norm(mv[64:], axis=1)
+    err = float(np.max(np.abs(settled - n0)))
+    if err > 0.02:
+        print(f"     stand-off over the settled tail departs from frame 0 by up to "
+              f"{err:.3f} m (min {settled.min():.3f}, max {settled.max():.3f})")
+        ok = False
+
+    # 4. The lag is speed-dependent, which is the signature of damping the wrong velocity:
+    #    a rig that holds distance frames 1.0 m/s and 3.0 m/s identically.
+    slow, fast = track(1.0), track(3.0)
+    spread = float(abs(np.linalg.norm(slow[100]) - np.linalg.norm(fast[100])))
+    if spread > 0.02:
+        print(f"     stand-off depends on the subject's speed: {np.linalg.norm(slow[100]):.3f} m "
+              f"at 1.0 m/s vs {np.linalg.norm(fast[100]):.3f} m at 3.0 m/s")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] boom_holds_distance "
+          f"(walk sag {n30 - n0:+.3f} m, settled err {err:.3f} m, speed spread {spread:.3f} m)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1254,7 +1330,8 @@ if __name__ == "__main__":
              t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
              t_visibility_counts_near_objects, t_checkdefs_scope,
              t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract,
-             t_cache_matches_fresh_build, t_window_arithmetic]
+             t_cache_matches_fresh_build, t_window_arithmetic,
+             t_boom_holds_distance]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
