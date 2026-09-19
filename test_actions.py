@@ -271,8 +271,15 @@ def t_caption_compiler():
         for b in bad[:4]:
             print("     " + b)
 
+    # check=True, not False. These three tests opted out of the invariants, and the
+    # polluted world they were passing against produced 119 violations including
+    # "mount_height: courier sits at 14.00 m, seat of taxi is 1.16 m". The invariants
+    # were never the weak link -- the tests were declining to run them.
     # 1. Compiled captions agree with the simulation they came from.
-    plan, _, _ = simulate_take(check=False)
+    plan, _, _inv = simulate_take(check=True)
+    if _inv.violations:
+        print(f'     simulation violates its own invariants: {_inv.violations[0].detail}')
+        ok = False
     with tempfile.TemporaryDirectory() as td:
         narrate.build(plan, TAKE_PHASES, take_content(), td, TAKE_WINDOWS)
         problems = narrate.check(td, plan, TAKE_PHASES, TAKE_WINDOWS,
@@ -351,7 +358,14 @@ def t_actor_captions():
     from world.take_content import content as take_content
 
     ok = True
-    plan, _, _ = simulate_take(check=False)
+    # check=True, not False. These three tests opted out of the invariants, and the
+    # polluted world they were passing against produced 119 violations including
+    # "mount_height: courier sits at 14.00 m, seat of taxi is 1.16 m". The invariants
+    # were never the weak link -- the tests were declining to run them.
+    plan, _, _inv = simulate_take(check=True)
+    if _inv.violations:
+        print(f'     simulation violates its own invariants: {_inv.violations[0].detail}')
+        ok = False
     track = narrate.derive_track(plan, TAKE_PHASES)
     names = take_content()["actor_names"]
 
@@ -471,7 +485,14 @@ def t_class_vocabulary():
     from world.state import RELEASED_CLASSES
 
     ok = True
-    plan, _, _ = simulate_take(check=False)
+    # check=True, not False. These three tests opted out of the invariants, and the
+    # polluted world they were passing against produced 119 violations including
+    # "mount_height: courier sits at 14.00 m, seat of taxi is 1.16 m". The invariants
+    # were never the weak link -- the tests were declining to run them.
+    plan, _, _inv = simulate_take(check=True)
+    if _inv.violations:
+        print(f'     simulation violates its own invariants: {_inv.violations[0].detail}')
+        ok = False
     from world import narrate as _nr
     if not _check_expected_take(_nr.derive_track(plan, TAKE_PHASES), "t_class_vocabulary"):
         ok = False
@@ -749,9 +770,15 @@ def t_take_is_reentrant():
         # Every frame's full state, not just the courier: a leak into any entity counts,
         # and courier altitude is how the symptom SHOWS, not how it is detected.
         "same = sum(1 for x, y in zip(a, b) if x[1] == y[1])\n"
+        # A fresh RuleSet must still hold exactly the builtins. This is the invariant the
+        # scoping establishes, and unlike `mid - before` it can still fail: it catches a
+        # RuleSet that shares one dict instead of copying, or anything gaining write
+        # access to _BUILTIN. `mid - before` cannot fail any more, precisely because the
+        # fix made rules.names() read a dict only the decorator writes.
+        "fresh = sorted(rules.RuleSet().names())\n"
         "ya = [json.loads(f[1])['entities']['courier']['position'][1] for f in a]\n"
         "yb = [json.loads(f[1])['entities']['courier']['position'][1] for f in b]\n"
-        "print(json.dumps({'before': before, 'mid': mid, 'same': same,\n"
+        "print(json.dumps({'before': before, 'mid': mid, 'same': same, 'fresh': fresh,\n"
         "                  'n': len(a), 'ya': ya, 'yb': yb}))\n"
         % str(Path(_ta.__file__).resolve().parent)
     )
@@ -766,9 +793,18 @@ def t_take_is_reentrant():
 
     ok = True
 
-    # The registry must not grow across takes.
+    # The registry must not grow across takes. NOTE: this assertion is retired by the fix
+    # itself -- rules.names() now reads a dict only the decorator writes -- so it is kept
+    # as a named symptom, not as coverage.
     if mid - before:
         print(f"     registry leaked {sorted(mid - before)} after one take")
+        ok = False
+
+    # The live version of that check: a take must not be able to change what a NEW take
+    # starts from, by any route, including a RuleSet that aliases instead of copying.
+    if sorted(d["fresh"]) != sorted(d["before"]):
+        print(f"     a fresh RuleSet starts from {sorted(d['fresh'])}, "
+              f"not the builtins {sorted(d['before'])}")
         ok = False
 
     # Every frame of the two takes must match, over the whole state and not one field.
@@ -834,6 +870,27 @@ def t_visibility_counts_near_objects():
               f"{inv.violations[0].detail}")
         ok = False
 
+    # The OTHER direction, and the one that separates the correct predicate from the
+    # plausible-looking wrong one. `if bb is not None:` also "flips the None case" but
+    # changes nothing for the defect (the bad frames are all None either way) while making
+    # () truthy -- so an entity 500 m behind the camera would start counting as on screen
+    # and the visible invariant would stop firing for the case it was written for. A test
+    # that only checks the first direction passes for that version too.
+    behind = Entity("ghost", "vehicle", [0.0, 0.0, -500.0], size=[4.0, 2.0, 5.0])
+    bb_behind = screen_bbox(cam, behind.pos + np.array([0.0, -1.0, 0.0]), 2.5, 336, 192)
+    if bb_behind != ():
+        print(f"     staging failed: wanted () for a body behind the camera, got {bb_behind!r}")
+        ok = False
+    st2 = WorldState(seed=0)
+    st2.add(behind)
+    inv2 = Invariants()
+    inv2.visible_windows = {"ghost": (0, 0)}
+    inv2.check(st2, cam, 0)
+    inv2.finish()
+    if not inv2.violations:
+        print("     a body 500 m BEHIND the camera counted as visible")
+        ok = False
+
     # The protagonist's sphere must cover the rig, not a ball at his knees.
     world = build(StreetSpec())
     c = world.get("courier")
@@ -843,7 +900,8 @@ def t_visibility_counts_near_objects():
         ok = False
 
     print(f"[{'PASS' if ok else 'FAIL'}] visibility_counts_near_objects "
-          f"(unboundable sphere -> {'visible' if not inv.violations else 'INVISIBLE'}, "
+          f"(unboundable -> {'visible' if not inv.violations else 'INVISIBLE'}, "
+          f"behind-camera -> {'not visible' if inv2.violations else 'VISIBLE'}, "
           f"courier sphere r={float(max(c.size)) / 2:.2f} m)")
     return ok
 
