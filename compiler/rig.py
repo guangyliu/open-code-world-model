@@ -111,58 +111,37 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # swing and a breathing sway, with the hips and knees pinned at zero -- that is what "feet
 # fixed" means, and it is why this is a separate channel from the gait.
 #
-# The scale comes from their rendering of that same shot. A first pass read "subtly" and
-# "a short distance" as 6 and 8 degrees, which moved the class-8 mask by 19 px per frame
-# at 336x192 -- below what their own planted subject shows, which is a median of 47 px on
-# the very example whose prompt these words come from, so the amplitudes are scaled to it.
-#
-# That anchor is WEAKER than the one `boom_len` uses, and the two should not be cited as
-# equivalent. Their stand-off is a physical distance recoverable from the depth channel:
-# it would be the same number whatever resolution or renderer produced it. 47 px/frame is
-# not a physical quantity at all -- it is a composite of amplitude, subject size, framing,
-# resolution and the 2x2 pool, so matching it is closer to fitting the metric than to
-# recovering a measurement. It was adopted because the alternative was our own reading of
-# one adverb -- but the check that was supposed to justify keeping it DOES NOT PASS, and
-# the number it rested on was measured off the wrong bone. We land at 48 against their 47.
-#
-# Measured across a full idle cycle, naming the landmark:
-#
-#     hand  (forearm end, 0.751 m above the feet)   34.1 cm peak-to-peak
-#     elbow (upper-arm end, 0.996 m)                20.4 cm peak-to-peak
-#     analytic: upper arm 0.280 m x sin 18 deg =  8.7 cm from neutral
-#               full arm  0.536 m x sin 18 deg = 16.6 cm from neutral
-#
-# The "about 10 cm" this comment used to claim for the hand is the ELBOW. The hand travels
-# 34.1 cm peak-to-peak, about 17 cm either side of mid-swing: a forearm's length, not a
-# hand's width. Against the walking gait at the SAME landmark it is not short at all:
+# The scale comes from the same clause, read at the landmark the words name. "A short
+# distance beside her thigh" is a statement about the HAND, so it is checked at the
+# forearm end against a full walking swing at that same point:
 #
 #     walking hand swing (walk_pose)   40.4 cm peak-to-peak
+#     idle hand swing at  8 deg        16.8 cm  =  42% of it
 #     idle hand swing at 18 deg        34.1 cm  =  84% of it
-#     by shoulder angle                18.0 vs 22.4 deg  =  80%
 #
-# So 18 degrees is not faithful to "subtly ... a short distance beside her thigh": it is
-# four fifths of a full walking arm swing on a subject the prompt describes as planted.
-# The clause-faithful angle is about 8 degrees -- hand 14.9 cm peak-to-peak, roughly 37%
-# of a walk -- which is what the first reading of the words gave, before the amplitude was
-# scaled to their 47 px/frame. The amplitude is left as it is here because changing it is
-# behavioural and needs its own commit, its own test and re-verification of the six and
-# the take; what is recorded is that the fitted value is unsupported by the clause rather
-# than corroborated by it.
+# 8 degrees reads as a short swing beside the thigh; 18 is four fifths of a full walking
+# arm swing on a subject the prompt describes as planted, and does not.
 #
-# Two errors in this comment's history were both a plausible number from a nearly-right
-# geometric quantity: the elbow-for-hand above, and a first attempt at the walking
-# comparison that took the largest excursion over EVERY rig point -- which for a walk is
-# the foot, giving 94.8 cm and a flattering 36%. Name the exact landmark whenever a
-# distance is quoted off the rig.
+# These were briefly set to 14/18, scaled to match the 47 px/frame of class-8 change their
+# own planted subject shows. That was the one constant in the idle path fitted to a metric
+# rather than derived, and it does not survive scrutiny: their 47 px is not a physical
+# quantity -- unlike the stand-off, which is a distance recoverable from the depth channel,
+# it composes amplitude, subject size, framing, resolution and the 2x2 pool. The check that
+# was supposed to justify the fit was also computed off the wrong bone, quoting 10 cm for
+# the hand when 10 cm is the ELBOW (hand 34.1 cm, elbow 20.4 cm at 18 degrees).
 #
-# One property of IDLE_HZ = 0.25 a reader of the DUV should expect rather than be surprised
-# by: the cycle is 96 frames at 24 fps, and a window is 124, so it repeats exactly once --
-# frames 96-123 duplicate frames 0-27. For a subject that is planted in front of a camera
-# that is also still, that makes the window 96 distinct frames rather than 124, which is
-# what ex36 renders. It is a loop, not a freeze, and the articulation guard passes it.
-IDLE_TURN_DEG = 14.0
-IDLE_SWING_DEG = 18.0
-IDLE_SWAY_DEG = 3.0
+# So both constants come from the clause and ex36's shortfall is recorded rather than
+# closed: it lands at 26 px/frame against their 47. That gap is real and is not something
+# to spend amplitude on.
+#
+# Both constants matter. The torso turn dominates the rendered mask change -- 286 px/frame
+# at full amplitude, 122 with the turn zeroed, 217 with the swing zeroed -- so a sweep that
+# varies only the arm reports the same pixel count at every angle and concludes the
+# amplitude has no effect. t_idle_amplitude_follows_the_clause asserts both.
+#
+IDLE_TURN_DEG = 6.0
+IDLE_SWING_DEG = 8.0
+IDLE_SWAY_DEG = 1.5
 
 
 def idle_pose(phase: float) -> Pose:
