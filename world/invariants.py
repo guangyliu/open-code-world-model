@@ -34,7 +34,8 @@ class Violation:
     detail: str
 
 
-def pitch_saturation(pitches, pitch_min: float, pitch_max: float, tol: float = 1e-6):
+def pitch_saturation(pitches, pitch_min: float, pitch_max: float, tol: float = 1e-6,
+                     frac: float = 0.95):
     """Report a camera pitch that sits at a clamp for an ENTIRE window, else "".
 
     A clamp exists to stop the axis running away, not to choose the framing. When every
@@ -49,15 +50,32 @@ def pitch_saturation(pitches, pitch_min: float, pitch_max: float, tol: float = 1
 
     Saturating for PART of a window is legitimate -- a climb genuinely reaches the limit --
     so only a whole window counts.
+
+    "A whole window" needs two allowances, both learned from cases that slipped through.
+
+    First, the frames need not all be at the SAME limit. An axis that ping-pongs between
+    both clamps is as unreachable as one welded to a single limit; a first version of this
+    check required one clamp to hold every frame, and a staged take with 421 of 484 frames
+    at pitch_min and 61 at pitch_max reported nothing.
+
+    Second, requiring literally every frame is too brittle: that same take has 2 frames in
+    transit BETWEEN the clamps, and 482 of 484 is still the clamp choosing the framing
+    rather than the shot. Hence `frac`. It is a threshold and thresholds invite tuning, so
+    it is pinned from both sides by cases in the test -- 482/484 must fire, 60/124 must not
+    -- rather than left as a number someone can drift.
     """
     p = [float(x) for x in pitches]
     if not p:
         return ""
-    for name, lim in (("pitch_min", pitch_min), ("pitch_max", pitch_max)):
-        if all(abs(x - lim) <= tol for x in p):
-            return (f"pitch pinned at {name} ({lim:+.2f} deg) for all {len(p)} frames; "
-                    f"the requested framing is unreachable, not chosen")
-    return ""
+    at_lo = sum(1 for x in p if abs(x - pitch_min) <= tol)
+    at_hi = sum(1 for x in p if abs(x - pitch_max) <= tol)
+    if (at_lo + at_hi) < frac * len(p):
+        return ""
+    where = (f"pitch_min ({pitch_min:+.2f} deg)" if at_hi == 0 else
+             f"pitch_max ({pitch_max:+.2f} deg)" if at_lo == 0 else
+             f"both clamps ({at_lo} low, {at_hi} high)")
+    return (f"pitch pinned at {where} for {at_lo + at_hi}/{len(p)} frames; "
+            f"the requested framing is unreachable, not chosen")
 
 
 @dataclass
@@ -75,6 +93,11 @@ class Invariants:
     # 55% of the flight and still cleared a 60% bar, because losing him for two seconds is
     # a small fraction of a 20 s take and a total failure of the shot.
     visible_min: dict = field(default_factory=dict)
+    # (pitch_min, pitch_max) of the rig that produced the frames, so `finish` can tell a
+    # clamp that merely bit from one that chose the whole window's framing. None disables
+    # the check, for callers that do not own a rig.
+    pitch_clamp: tuple | None = None
+    _pitches: list = field(default_factory=list)
 
     def fail(self, frame: int, rule: str, detail: str) -> None:
         self.violations.append(Violation(frame, rule, detail))
@@ -93,6 +116,8 @@ class Invariants:
         """
         mounts = {k: (v if isinstance(v, Mount) else Mount(v)) for k, v in (mounts or {}).items()}
         flying = flying or set()
+        if cam is not None:
+            self._pitches.append(float(cam.pitch_deg))
 
         for eid, e in s.entities.items():
             if not e.alive:
@@ -168,6 +193,10 @@ class Invariants:
 
     # -- reporting ----------------------------------------------------------
     def finish(self, min_visible_frac: float = 0.6) -> None:
+        if self.pitch_clamp is not None and self._pitches:
+            sat = pitch_saturation(self._pitches, *self.pitch_clamp)
+            if sat:
+                self.fail(len(self._pitches) - 1, "pitch", sat)
         for eid, (f0, f1) in self.visible_windows.items():
             n = self._active.get(eid, 0)
             seen = self._seen_visible.get(eid, 0)
