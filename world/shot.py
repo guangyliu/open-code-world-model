@@ -70,6 +70,26 @@ class Shot:
         return out
 
 
+def mode_for(sh: "Shot") -> str:
+    """The camera mode a parsed shot asks for.
+
+    "preserving / holding the opening layout" reads as a frozen lens and is not one. The
+    released conditions hold the subject at a constant distance through exactly that span
+    -- ex30 1.72-1.76 m and ex28 1.75-1.86 m over the first 31 frames -- so the layout
+    holds because the camera moves WITH the subject. ex30's prompt says it outright: "the
+    camera follows at a nearly constant distance with a gentle walking bob", in the same
+    sentence group as "preserving his large lower center-left placement".
+
+    So the clause maps to `framed`: a follow that holds stand-off and screen position with
+    the boom azimuth frozen. `lock` remains for clauses that describe a genuinely fixed
+    lens, such as a steady vantage held while the subject rotates in place.
+
+    This lives here, rather than in the scene script, so the routing is covered by
+    `t_framed_holds_the_opening_layout` instead of being a line nothing tests.
+    """
+    return "framed" if sh.hold else "follow"
+
+
 _SCENE = ("Appearance and scene:", "Protagonist action timeline:")
 
 # Ordered: the more specific phrasing wins. All are anchored on the subject or the camera
