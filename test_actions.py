@@ -1487,6 +1487,103 @@ def t_framed_holds_the_opening_layout():
     return ok
 
 
+def t_window_rejects_a_still_and_a_pinned_pitch():
+    """Two degeneracies nothing checked, both of which shipped once the rig was corrected.
+
+    Fixing the boom sag and the yaw seeding removed the only motion two of our six windows
+    had. ex31 and ex36 then emitted ONE distinct frame repeated 124 times -- 5.17 seconds of
+    conditioning with no temporal information in it at all. They passed validate_conditions,
+    passed every invariant, and scored 0.000 on every axis of the steadiness table, which
+    made them look like the best result on the page. The sag and the slide had been supplying
+    apparent motion, and nothing noticed when it went away.
+
+    The second is the twin of a saturation we already fixed. `t_flight_camera` used to report
+    max pitch +35.0, which is the clamp, pinned there for 46 of 120 frames. The low side does
+    the same thing: ex31 aims at the stag's feet (`aim_height=0.0`) and its pitch sits at
+    -35.00 for all 124 frames. A clamp that saturates a whole window means the requested
+    framing is unreachable, and that should be reported rather than silently clipped.
+
+    Neither guard is about matching the released numbers. A still window and a pinned axis
+    are wrong on their own terms.
+    """
+    import hashlib
+    import subprocess
+    import sys as _sys
+    import tempfile
+    from pathlib import Path as _P
+
+    import numpy as np
+    from PIL import Image
+
+    import take_actions as _ta
+    from world.invariants import pitch_saturation
+
+    root = _P(_ta.__file__).resolve().parent
+    ok = True
+    H, W = 192, 336
+
+    def write(into, frames):
+        into.mkdir(parents=True, exist_ok=True)
+        for k, (d, sm) in enumerate(frames):
+            np.ascontiguousarray(d, dtype="<f4").tofile(into / f"{k:06d}.depth.f32")
+            Image.fromarray(np.ascontiguousarray(sm, dtype=np.uint8), "L").save(
+                into / f"{k:06d}.semantic_id.png")
+
+    def validates(into, n):
+        r = subprocess.run([_sys.executable, str(root / "validate_conditions.py"),
+                            str(into), "--expect", str(n)],
+                           capture_output=True, text=True, cwd=str(root))
+        return r.returncode == 0, r.stdout + r.stderr
+
+    base_d = np.full((H, W), 10.0, np.float32)
+    base_s = np.full((H, W), 4, np.uint8)
+    base_d[:20] = 0.0
+    base_s[:20] = 1
+
+    with tempfile.TemporaryDirectory() as td:
+        # A still window: eight byte-identical frames.
+        still = [(base_d.copy(), base_s.copy()) for _ in range(8)]
+        d0 = _P(td) / "still"
+        write(d0, still)
+        good, out = validates(d0, 8)
+        if good:
+            print("     8 byte-identical frames validated clean; a still window is not a "
+                  "conditioning signal")
+            ok = False
+
+        # The negative case: the same window with one frame differing must still pass, so
+        # the guard cannot be satisfied by rejecting everything.
+        moving = [(base_d.copy(), base_s.copy()) for _ in range(8)]
+        moving[4][0][100, 100] = 11.0
+        moving[4][1][100, 100] = 5
+        d1 = _P(td) / "moving"
+        write(d1, moving)
+        good, out = validates(d1, 8)
+        if not good:
+            print(f"     a window with one differing frame was rejected: {out.strip()[:200]}")
+            ok = False
+
+    # Pitch saturation: all at the clamp is a failure, inside is fine, touching is fine.
+    lo, hi = -35.0, 35.0
+    cases = [
+        ([lo] * 124, True, "pinned at pitch_min for the whole window"),
+        ([hi] * 124, True, "pinned at pitch_max for the whole window"),
+        ([-20.0] * 124, False, "constant but not at a clamp"),
+        ([lo] * 60 + [-20.0] * 64, False, "saturated for half the window"),
+        (list(np.linspace(lo, hi, 124)), False, "sweeping between the clamps"),
+    ]
+    for pitches, want_flag, why in cases:
+        got = pitch_saturation(pitches, lo, hi)
+        if bool(got) != want_flag:
+            print(f"     pitch_saturation({why}) -> {got!r}, expected "
+                  f"{'a report' if want_flag else 'nothing'}")
+            ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] window_rejects_a_still_and_a_pinned_pitch "
+          f"({len(cases)} pitch cases)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1498,7 +1595,8 @@ if __name__ == "__main__":
              t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract,
              t_cache_matches_fresh_build, t_window_arithmetic,
              t_boom_holds_distance, t_aim_seeded_at_steady_state,
-             t_framed_holds_the_opening_layout]
+             t_framed_holds_the_opening_layout,
+             t_window_rejects_a_still_and_a_pinned_pitch]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
