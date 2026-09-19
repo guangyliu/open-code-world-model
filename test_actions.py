@@ -958,6 +958,28 @@ def t_checkdefs_scope():
          "class attribute read as a bare name inside a method"),
         ("import numpy as np\n\n\nclass C:\n    def m(self):\n        return np.pi\n",
          False, "import used inside a method"),
+        # The mirror of the motivating fault: bound only in a NESTED function, read in the
+        # PARENT. Also a runtime NameError, also missed before the fix. A fix that only
+        # special-cases siblings closes one of the two.
+        ("def alpha():\n    def inner():\n        z = 1\n        return z\n"
+         "    inner()\n    return z\n", True, "nested local read in the parent"),
+        ("def alpha():\n    return nowhere\n", True, "genuinely undefined"),
+        # The false-positive traps: every one of these is legal Python and appears in this
+        # repository, so a careless rewrite of the traversal breaks real files.
+        ("def alpha(xs):\n    return [y * 2 for y in xs]\n", False,
+         "comprehension variable"),
+        ("def alpha():\n    f = lambda v: v + 1\n    return f(1)\n", False,
+         "lambda parameter"),
+        ("def alpha(xs):\n    return [w for v in xs if (w := v) > 0]\n", False,
+         "walrus in a comprehension"),
+        ("def alpha():\n    try:\n        pass\n    except ValueError as exc:\n"
+         "        return exc\n", False, "except-as name"),
+        ("G = 0\n\n\ndef setter():\n    global G\n    G = 1\n\n\n"
+         "def alpha():\n    return G\n", False, "global assigned in another function"),
+        ("def alpha():\n    import os\n    return os.sep\n", False,
+         "import inside the function"),
+        ("def alpha():\n    n = 0\n    n += 1\n    return n\n", False,
+         "augmented assign of a local"),
     ]
     for src, must_flag, why in cases:
         with tempfile.TemporaryDirectory() as td:
