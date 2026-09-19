@@ -906,6 +906,78 @@ def t_visibility_counts_near_objects():
     return ok
 
 
+def t_checkdefs_scope():
+    """checkdefs must mean "bound nowhere in THIS function", not "nowhere in the file".
+
+    `_bound` collected bindings with `ast.walk`, which descends into nested bodies, and the
+    `continue` after recording a nested function's name does not stop that descent. So the
+    module scope ended up holding every local in the file and the real rule became "bound
+    nowhere in the file". A name assigned in one function and read in a sibling -- exactly
+    the fault the tool exists to catch, and the one that cost three GPU allocations --
+    passed as clean while raising NameError at runtime.
+    """
+    import importlib.util
+    import tempfile
+    from pathlib import Path
+
+    import take_actions as _ta
+
+    root = Path(_ta.__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("checkdefs", root / "portb/checkdefs.py")
+    cd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cd)
+
+    ok = True
+    cases = [
+        # (source, must_flag, why)
+        ("def alpha():\n    helper = 3\n    return helper\n\n\n"
+         "def beta():\n    return helper\n", True, "sibling function local"),
+        ("def alpha():\n    def inner():\n        v = 1\n        return v\n"
+         "    return inner\n\n\ndef beta():\n    return v\n", True,
+         "local of a nested function, read from a sibling"),
+        ("W = 3\n\n\ndef alpha():\n    return W\n", False, "module global"),
+        ("def alpha():\n    x = 1\n\n    def inner():\n        return x\n"
+         "    return inner()\n", False, "closure over the enclosing function"),
+        ("import os\n\n\ndef alpha():\n    return os.sep\n", False, "import"),
+        ("def alpha(a, b=2):\n    return a + b\n", False, "parameters"),
+        ("def alpha():\n    return len([1])\n", False, "builtin"),
+        # The reverse of the scope bug: a nested function's own local must not be charged
+        # to its parent. Pruning _bound without pruning _read would flag this.
+        ("def alpha():\n    def inner():\n        q = 1\n        return q\n"
+         "    return inner()\n", False, "local used only inside a nested function"),
+        # Decorators and defaults ARE evaluated in the enclosing scope, so a missing one
+        # there is still a real fault.
+        ("def alpha():\n    def inner(x=missing):\n        return x\n"
+         "    return inner\n", True, "default value read from the enclosing scope"),
+        ("__all__ = ['alpha']\n\n\ndef alpha():\n    return __file__\n", False,
+         "module dunder"),
+        # Classes are scopes too, and have no parameter list. None of the first ten cases
+        # had one, so the first version of the fix crashed on every file with a class.
+        ("class C:\n    def m(self):\n        return self\n", False, "class method"),
+        ("class C:\n    FIELD = 1\n\n    def m(self):\n        return FIELD\n", True,
+         "class attribute read as a bare name inside a method"),
+        ("import numpy as np\n\n\nclass C:\n    def m(self):\n        return np.pi\n",
+         False, "import used inside a method"),
+    ]
+    for src, must_flag, why in cases:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "case.py"
+            f.write_text(src, encoding="utf-8")
+            import contextlib
+            import io
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cd.check(str(f))
+            flagged = rc != 0
+            if flagged != must_flag:
+                verb = "missed" if must_flag else "false-positived on"
+                print(f"     checkdefs {verb} the {why} case")
+                ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] checkdefs_scope ({len(cases)} cases)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -913,7 +985,7 @@ if __name__ == "__main__":
              t_caption_compiler, t_actor_captions,
              t_water_surface, t_class_vocabulary, t_camera_modes,
              t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
-             t_visibility_counts_near_objects]
+             t_visibility_counts_near_objects, t_checkdefs_scope]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

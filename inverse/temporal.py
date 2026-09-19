@@ -9,6 +9,9 @@ A recovered scene must beat NULL and approach ORACLE.  If it only matches NULL,
 the 'reconstruction' is a per-frame depth refit wearing a 3D costume.
 """
 import sys, numpy as np, json
+import os
+
+EXAMPLES = os.environ.get("CWM_EXAMPLES", "examples40")
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 from dataclasses import dataclass, field
 from compiler.render import Camera, render_frame

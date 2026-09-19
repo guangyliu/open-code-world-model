@@ -3,6 +3,9 @@ the recovered camera motion?  Warp THEIR OWN frame-0 point cloud by the same
 recovered motion and splat it.  That has perfect geometry by construction, so
 whatever error it shows is the motion's; anything beyond that is the primitives'."""
 import sys, numpy as np, json
+import os
+
+EXAMPLES = os.environ.get("CWM_EXAMPLES", "examples40")
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 import focal2 as F
 H,W=192,336; CX,CY=W/2-0.5,H/2-0.5
