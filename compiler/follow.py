@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .render import Camera
+from .render import OUT_W, Camera
 
 
 @dataclass
@@ -28,6 +28,10 @@ class FollowCamera:
     pitch_deg: float = -8.0
     focal_px: float = 206.0   # the measured released intrinsic; see StreetSpec
     shoulder_offset: float = 0.45
+    # Where the subject sits across the frame, 0 = left edge, 0.5 = centre, 1 = right edge.
+    # This rotates the optical axis; `shoulder_offset` moves the camera body and the aim
+    # then cancels it, which is why it never changed the screen position.
+    aim_screen_x: float = 0.5
     boom_tau: float = 0.55
     aim_tau: float = 0.12
     zeta: float = 0.55          # boom damping ratio; < 1 overshoots, 1 is critical
@@ -39,7 +43,11 @@ class FollowCamera:
     # that does not leave the ground is bit-identical.
     # Shot type, settable per frame. "follow" is the boom rig and the default, so a take
     # that never touches this is unchanged.
-    #   hold   - the rig stops where it is and lets the subject cross the frame
+    #   hold   - the body stops where it is; the aim keeps tracking the subject, so the
+    #            viewpoint is fixed but the framing is not ("a close, steady vantage while
+    #            she rotates")
+    #   lock   - locked off: body AND aim frozen, so the whole layout is preserved and the
+    #            subject drifts across the frame ("preserving the exact initial layout")
     #   orbit  - the boom swings around the subject at `orbit_rate` deg/s
     #   push   - the boom shortens toward `push_to` at `push_rate` m/s
     #   pull   - the boom lengthens toward `push_to`
@@ -47,6 +55,7 @@ class FollowCamera:
     orbit_rate: float = 24.0    # degrees per second
     push_rate: float = 2.0      # metres per second of boom change
     push_to: float = 8.0        # boom length push/pull aims for
+    _locked: object = field(default=None, repr=False)
     _orbit: float = field(default=0.0, repr=False)
     _dist: float | None = field(default=None, repr=False)
     ground_y: float = 0.0       # world y of the road (+Y is down, so the ground is 0)
@@ -59,6 +68,24 @@ class FollowCamera:
     _pos: np.ndarray | None = field(default=None, repr=False)
     _vel: np.ndarray | None = field(default=None, repr=False)
     _yaw: float | None = field(default=None, repr=False)
+
+    def _maybe_lock(self, cam: Camera) -> Camera:
+        """Remember the first pose taken while locked, so later frames can reuse it."""
+        if self.mode == "lock" and self._locked is None:
+            self._locked = cam
+        return cam
+
+    def _yaw_offset(self) -> float:
+        """Degrees to rotate off the subject so it lands at `aim_screen_x`.
+
+        u = cx/cz * f + W/2, and increasing yaw swings the subject LEFT in frame, so the
+        sign is negative. `t_aim_screen_x` projects a subject back and asserts the fraction
+        it actually lands at, which pins this rather than trusting the derivation.
+        """
+        if abs(self.aim_screen_x - 0.5) < 1e-9:
+            return 0.0
+        return -float(np.degrees(np.arctan(
+            (self.aim_screen_x - 0.5) * OUT_W / self.focal_px)))
 
     def _desired(self, target: np.ndarray, heading_deg: float) -> np.ndarray:
         """Boom anchor: behind the subject along its heading, offset to one side.
@@ -89,6 +116,12 @@ class FollowCamera:
 
     def update(self, target: np.ndarray, heading_deg: float, dt: float) -> Camera:
         target = np.asarray(target, float)
+        # Locked off: once the first frame has fixed the pose, hand back exactly that pose.
+        # Nothing about the subject can move it, which is what preserving a layout means.
+        if self.mode == "lock" and self._locked is not None:
+            c = self._locked
+            return Camera(focal_px=c.focal_px, position=c.position.copy(),
+                          pitch_deg=c.pitch_deg, yaw_deg=c.yaw_deg, roll_deg=c.roll_deg)
         if self._dist is None:
             self._dist = self.distance
         if self.mode == "orbit":
@@ -108,9 +141,10 @@ class FollowCamera:
             d0 = (yaw0 - self._yaw + 180.0) % 360.0 - 180.0
             self._yaw += d0 * (1.0 - np.exp(-dt / max(self.aim_tau, 1e-6)))
             pitch0 = np.degrees(np.arctan2(-aim0[1], np.hypot(aim0[0], aim0[2])))
-            return Camera(focal_px=self.focal_px, position=self._pos.copy(),
-                          pitch_deg=float(np.clip(pitch0, self.pitch_min, self.pitch_max)),
-                          yaw_deg=float(self._yaw))
+            return self._maybe_lock(Camera(
+                focal_px=self.focal_px, position=self._pos.copy(),
+                pitch_deg=float(np.clip(pitch0, self.pitch_min, self.pitch_max)),
+                yaw_deg=float(self._yaw + self._yaw_offset())))
         # Second-order spring-damper. A first-order exponential lag is strictly
         # overdamped and cannot overshoot, so it caps the distance excursion far below
         # what the released takes show; zeta < 1 is what reaches their spread.
@@ -134,6 +168,7 @@ class FollowCamera:
         # has to be allowed to look up.
         pitch = np.degrees(np.arctan2(-aim[1], np.hypot(aim[0], aim[2])))
 
-        return Camera(focal_px=self.focal_px, position=self._pos.copy(),
-                      pitch_deg=float(np.clip(pitch, self.pitch_min, self.pitch_max)),
-                      yaw_deg=float(self._yaw))
+        return self._maybe_lock(Camera(
+            focal_px=self.focal_px, position=self._pos.copy(),
+            pitch_deg=float(np.clip(pitch, self.pitch_min, self.pitch_max)),
+            yaw_deg=float(self._yaw + self._yaw_offset())))
