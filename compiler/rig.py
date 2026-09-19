@@ -114,11 +114,24 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # The scale comes from their rendering of that same shot. A first pass read "subtly" and
 # "a short distance" as 6 and 8 degrees, which moved the class-8 mask by 19 px per frame
 # at 336x192 -- below what their own planted subject shows, which is a median of 47 px on
-# the very example whose prompt these words come from. Their number is a measurement of
-# what those words look like at this resolution on this shot, the same kind of anchor
-# their stand-off gave boom_len, so the amplitudes are scaled to it. 14 degrees of torso
-# turn over a four-second cycle is still a gentle look-around, and an 18 degree shoulder
-# swing moves the hand about 10 cm beside the thigh.
+# the very example whose prompt these words come from, so the amplitudes are scaled to it.
+#
+# That anchor is WEAKER than the one `boom_len` uses, and the two should not be cited as
+# equivalent. Their stand-off is a physical distance recoverable from the depth channel:
+# it would be the same number whatever resolution or renderer produced it. 47 px/frame is
+# not a physical quantity at all -- it is a composite of amplitude, subject size, framing,
+# resolution and the 2x2 pool, so matching it is closer to fitting the metric than to
+# recovering a measurement. It is used here because the alternative was our own reading of
+# one adverb, and because the resulting angles survive a sanity check independent of it:
+# 14 degrees of torso turn over a four-second cycle is a gentle look-around, and an 18
+# degree shoulder swing moves the hand about 10 cm beside the thigh, which is what "a
+# short distance beside her thigh" describes. We land at 48 against their 47.
+#
+# One property of IDLE_HZ = 0.25 a reader of the DUV should expect rather than be surprised
+# by: the cycle is 96 frames at 24 fps, and a window is 124, so it repeats exactly once --
+# frames 96-123 duplicate frames 0-27. For a subject that is planted in front of a camera
+# that is also still, that makes the window 96 distinct frames rather than 124, which is
+# what ex36 renders. It is a loop, not a freeze, and the articulation guard passes it.
 IDLE_TURN_DEG = 14.0
 IDLE_SWING_DEG = 18.0
 IDLE_SWAY_DEG = 3.0
