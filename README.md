@@ -147,6 +147,10 @@ averaged "over 40 examples" is really over 39 distinct geometries.)
 
 ## Results: six released examples, reproduced end to end
 
+Regenerate any of the six with `python examples/repro.py <N>` (needs the released
+examples at `CWM_EXAMPLES`, default `examples40`; writes under `CWM_REPRO_OUT`, default
+`out/repro`). Each preset carries the prompt clause that set its framing.
+
 For each example we author the scenario in our proxy from the authors' own prompt, then generate
 video **twice** — once from their released conditions, once from ours — holding the anchor image,
 the caption and the seed fixed. The proxy is the only variable.
@@ -258,7 +262,7 @@ probe/                  geometry and estimator helpers, exercised by the tests
 inverse/                inverse-rendering probe, its 25 scripts and its findings
 portb/                  MiniMax-H3 driver and multi-window retake continuity
 docs/                   the six comparison figures
-examples/               where to get the released 40 (not vendored)
+examples/               repro.py regenerates the six comparison proxies; README says where to get the released 40
 take_actions.py         a complete 484-frame scripted take
 validate_conditions.py  independent cold re-read of a condition directory
 caption_sync.py         fails a take whose captions disagree with its simulation

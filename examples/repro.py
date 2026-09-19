@@ -27,6 +27,10 @@ from pathlib import Path
 
 import numpy as np
 
+# Runnable as `python examples/repro.py N` from any directory: the repo root is the
+# script's parent, not its own directory, and only the latter is on sys.path by default.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from compiler import writer
 from compiler.render import Camera, render_frame
 from world import compile as wc
@@ -114,6 +118,8 @@ PRESETS = {
                   tree_step=7.0, tree_lat=9.0, n_buildings=4, bldg_step=55.0,
                   n_backdrop=11, n_terraces=1, terrace_lat0=26.0, terrace_w=22.0,
                   channel_w=0.0, base_speed=0.0, cam_height=1.8,
+                  # "a steep downward-looking aerial view": the only preset still on
+                  # aim_height rather than aim_screen_y, kept as an honest residual.
                   rise_gain=1.25, aim_height=-1.4, boom_len=4.2, pull_back=0.7),
         hook="flight",
         note="THE WEAKEST OF THE SIX, and kept deliberately. Theirs is a high oblique "
