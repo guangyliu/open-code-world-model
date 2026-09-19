@@ -140,8 +140,17 @@ class FollowCamera:
         if self._pos is None:
             # Zero offset and zero relative velocity: frame 0 is already the steady state,
             # so there is nothing to spring in from.
-            self._pos, self._vel, self._yaw = want.copy(), np.zeros(3), heading_deg
+            self._pos, self._vel = want.copy(), np.zeros(3)
             self._off = np.zeros(3)
+            # Seed the aim at the direction that actually looks at the aim point, NOT at
+            # the subject's heading. `shoulder_offset` puts the camera to one side of the
+            # boom axis, so the two differ by atan(shoulder_offset / boom): 21.4 deg at a
+            # 1.15 m boom, which is 57 px of a 336 px frame. `aim_tau` then eased that
+            # error out over ~18 frames, sliding the subject sideways while nothing in the
+            # world had moved. Shrinking aim_tau would only hide it faster, and would
+            # stiffen tracking everywhere else.
+            aim0 = target + np.array([0.0, -self.aim_height, 0.0]) - self._pos
+            self._yaw = float(np.degrees(np.arctan2(aim0[0], aim0[2])))
         if self.mode == "hold":
             # Locked off: the rig keeps its pose and the subject moves through the frame.
             # The aim still tracks, which is what their "holds a steady vantage while she
