@@ -86,6 +86,9 @@ PRESETS = {
                   n_buildings=0, n_backdrop=7, n_terraces=0, channel_w=0.0,
                   # "begins behind Conan at roughly shoulder height, slightly toward his
                   # left side" -- a height and a lateral offset, no vertical placement.
+                  # The clause gives a height and a lateral offset and no vertical
+                  # placement, so centred is the stated reading -- requested explicitly,
+                  # because "no request" and "centre" are different instructions.
                   base_speed=1.1, cam_height=1.45, boom_len=1.67,
                   aim_height=0.875, aim_screen_y=CENTRE),
         hook="canal",
