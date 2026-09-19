@@ -1000,6 +1000,66 @@ def t_checkdefs_scope():
     return ok
 
 
+def t_fit_ground_refuses_z_depth():
+    """Plane flatness determines focal length from euclidean range, and NEVER from z-depth.
+
+    Back-projecting z-depth with a trial focal f' applies diag(f/f', f/f', 1). That is an
+    affine map, and an affine map sends a plane to a plane, so flatness is exactly
+    f-invariant: the sweep has no minimum and runs to the end of `focal_range`. On a
+    known-answer scene built at f=206 it returned a confident 1200.0, the search ceiling.
+
+    Normalising the ray divides by a norm that itself depends on f, which is nonlinear and
+    does break the degeneracy -- so the euclidean branch is a real estimator and is kept.
+    The defect was the z-depth branch answering instead of refusing, and z-depth is the
+    only depth this project has: compiler/render.py writes "z along the optical axis, in
+    metres -- never euclidean range".
+    """
+    import numpy as np
+
+    from compiler.render import Camera, Plane, render
+    from probe.geometry import fit_ground
+    from probe.proxy import H, W
+
+    ok = True
+    TRUE_F, TRUE_H, TRUE_PITCH = 206.0, 1.67, -8.0
+    cam = Camera(focal_px=TRUE_F, position=np.array([0.0, -TRUE_H, 0.0]),
+                 pitch_deg=TRUE_PITCH)
+    ground = [Plane(np.zeros(3), np.array([0.0, -1.0, 0.0]), class_id=4)]
+    z, ids = render(cam, ground, width=W, height=H)
+    mask = ids == 4
+
+    # z-depth must be refused, not answered.
+    refused = False
+    try:
+        got = fit_ground(z.astype(np.float64), mask, euclidean=False)
+        refused = got is None
+        if not refused:
+            print(f"     fit_ground answered {got.focal_px:.1f} px from z-depth "
+                  f"(truth {TRUE_F}); the sweep is monotone so that is the search ceiling")
+    except ValueError:
+        refused = True
+    if not refused:
+        ok = False
+
+    # Euclidean range must still work, so this discriminates a real fix from deletion.
+    dirs, fwd = cam.rays(W, H)
+    cosang = dirs @ fwd
+    euclid = np.where(z > 0, z / np.maximum(cosang, 1e-9), 0.0)
+    fit = fit_ground(euclid.astype(np.float64), mask, euclidean=True)
+    if fit is None:
+        print("     euclidean fit returned None on a clean known-answer scene")
+        ok = False
+    elif abs(fit.focal_px - TRUE_F) > 10.0:
+        print(f"     euclidean fit gave {fit.focal_px:.1f} px for a true {TRUE_F}")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] fit_ground_refuses_z_depth "
+          f"(z-depth refused, euclidean -> "
+          f"{fit.focal_px:.1f} px / {fit.height_m:.2f} m / {fit.pitch_deg:.1f} deg "
+          f"for truth {TRUE_F} / {TRUE_H} / {TRUE_PITCH})")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1007,7 +1067,8 @@ if __name__ == "__main__":
              t_caption_compiler, t_actor_captions,
              t_water_surface, t_class_vocabulary, t_camera_modes,
              t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
-             t_visibility_counts_near_objects, t_checkdefs_scope]
+             t_visibility_counts_near_objects, t_checkdefs_scope,
+             t_fit_ground_refuses_z_depth]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")

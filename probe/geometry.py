@@ -1,10 +1,28 @@
 """Steps 2-3: recover the proxy camera's intrinsics and ground-plane pose.
 
-The released conditions give metric depth but no camera parameters. A pinhole
-camera with a centred principal point and square pixels has one free intrinsic,
-the focal length f. We recover it by exploiting the fact that road_paved pixels
-lie on a physical plane: back-project them for a candidate f and keep the f whose
-back-projection is flattest. The same fit then yields camera height and pitch.
+The released conditions give metric depth but no camera parameters. A pinhole camera with a
+centred principal point and square pixels has one free intrinsic, the focal length f.
+
+**Plane flatness recovers f from EUCLIDEAN RANGE ONLY. It cannot recover f from z-depth,
+and this is exact, not approximate.** Back-projecting z-depth with a trial f' applies
+diag(f/f', f/f', 1) -- an affine map -- and an affine map sends a plane to a plane. So
+flatness is precisely f-invariant, the sweep has no minimum, and it runs to the end of
+`focal_range` whatever the truth is. Measured on a known-answer scene at f=206, the trimmed
+RMS decays monotonically as 1/f across a 15x focal range (7.33e-08 at f=80 down to 5.20e-09
+at f=1200): floating-point noise with no minimum in it. `fit_ground` therefore refuses
+z-depth rather than returning the ceiling.
+
+Normalising the ray divides by a norm that itself depends on f. That is nonlinear, it does
+break the degeneracy, and on the same scene it recovers focal 204.9 for a true 206.0, height
+1.677 for 1.670 and pitch -8.04 for -8.00. So the euclidean branch is a working estimator
+and is what this module offers.
+
+Note which one the released data is: `compiler/render.py` writes "z along the optical axis,
+in metres -- never euclidean range", and the released conditions are the same. A caller with
+CWM conditions must convert first: range = z / (ray_unit . forward).
+
+`inverse/focal.py` states the same conclusion from the other direction and recovers f by
+two-frame rigidity instead, which does not need a plane at all.
 """
 from __future__ import annotations
 
@@ -18,7 +36,10 @@ from .proxy import H, W
 @dataclass
 class PlaneFit:
     focal_px: float
-    rms_m: float          # RMS point-to-plane residual at this focal length
+    # Dimensionless: the RMS point-to-plane residual divided by mean depth, so focals are
+    # comparable across the sweep. It was called `rms_m` and documented as metres, which
+    # it has never been -- line 82 has always stored rms / d.mean().
+    score: float
     normal: np.ndarray    # unit plane normal in camera coords, pointing "up"
     height_m: float       # camera distance to the plane
     pitch_deg: float      # downward tilt of the optical axis below the plane
@@ -57,7 +78,21 @@ def fit_ground(depth: np.ndarray, mask: np.ndarray, *, euclidean: bool,
                focal_range=(80.0, 1200.0), samples: int = 240,
                max_depth_m: float = 80.0, max_points: int = 60000,
                rng: np.random.Generator | None = None) -> PlaneFit | None:
-    """Sweep focal length, keeping the value whose back-projected ground is flattest."""
+    """Sweep focal length, keeping the value whose back-projected ground is flattest.
+
+    Requires euclidean range. See the module docstring: on z-depth the criterion is exactly
+    f-invariant, so there is nothing to find and any answer would be an artefact of
+    `focal_range`.
+    """
+    if not euclidean:
+        raise ValueError(
+            "fit_ground cannot determine focal length from z-depth. Back-projecting "
+            "z-depth with a trial f applies diag(f/f', f/f', 1), which is affine, and an "
+            "affine map sends a plane to a plane -- so plane flatness is exactly "
+            "f-invariant, the sweep is monotone, and the result is whatever "
+            "focal_range[1] happens to be. Convert to euclidean range first "
+            "(range = z / (ray_unit . forward)) and pass euclidean=True. Released CWM "
+            "conditions store z-depth, so this conversion is required, not optional.")
     rng = rng or np.random.default_rng(0)
     sel = mask & (depth > 0.5) & (depth < max_depth_m)
     v, u = np.nonzero(sel)
@@ -72,9 +107,12 @@ def fit_ground(depth: np.ndarray, mask: np.ndarray, *, euclidean: bool,
     for f in np.geomspace(*focal_range, samples):
         pts = backproject(u.astype(np.float64), v.astype(np.float64), d, f, euclidean=euclidean)
         n, off, rms, used = _fit_plane(pts)
-        # Scale-invariant: a larger f inflates X/Y, so compare residual per unit depth.
+        # Scale-invariant: a larger f SHRINKS the back-projected X/Y for fixed depth
+        # (X = (u - cx) * d / f), so the raw residual falls with f for reasons that have
+        # nothing to do with fit quality; dividing by mean depth makes focals comparable.
+        # The old comment had this backwards.
         score = rms / d.mean()
-        if best is None or score < best.rms_m:
+        if best is None or score < best.score:
             if n[1] < 0:            # make the normal point up (camera +Y is down)
                 n, off = -n, -off
             pitch = float(np.degrees(np.arcsin(np.clip(-n[2], -1, 1))))
