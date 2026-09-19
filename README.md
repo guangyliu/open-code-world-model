@@ -66,8 +66,9 @@ python test_actions.py                                 # 11 scenario tests
 python test_cull.py                                    # renderer invariants
 ```
 
-(The one exception is `adherence_sheet.py`, which overlays proxy class boxes on rendered video
-and needs PyAV. Nothing on the path above imports it.)
+Two tools outside that path need more: `adherence_sheet.py` and `docs/mkweb.py` need PyAV to
+read and write video, and everything under `inverse/` needs SciPy. Nothing on the path above
+imports either — verified by import audit, not by assertion.
 
 ---
 
