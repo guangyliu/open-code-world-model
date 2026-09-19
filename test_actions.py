@@ -371,7 +371,7 @@ def t_water_surface():
     from world.state import KIND_TO_CLASS
 
     ok = True
-    cam = Camera(focal_px=202.0, position=np.array([0.0, -1.83, 0.0]), pitch_deg=-8.0,
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.83, 0.0]), pitch_deg=-8.0,
                  yaw_deg=0.0)
 
     wet = build(StreetSpec())
@@ -422,7 +422,7 @@ def t_class_vocabulary():
 
     ok = True
     plan, _, _ = simulate_take(check=False)
-    cam = Camera(focal_px=202.0, position=np.array([0.0, -1.83, 0.0]), pitch_deg=-8.0)
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.83, 0.0]), pitch_deg=-8.0)
     seen = set()
     # Sample across the take so every kind that ever spawns is covered, the broom included.
     for k in (0, 120, 200, 260, 330, 400, 460, 483):

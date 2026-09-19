@@ -88,10 +88,7 @@ finding.) Pitch and camera height are **not** fixed: they vary per example and w
 camera height ranges from 1.6 m to 231 m across the 40, and one example's horizon moves 100 rows
 in 124 frames. There is no single rig to recover.
 
-**A known inconsistency:** `Camera.focal_px` defaults to 206.0, but the bundled street scene
-(`StreetSpec.focal_px`) ships at 202.0, so our own takes — including the comparison figures below
-— render at 202. Both sit inside the measured IQR, but if you are matching the released format
-exactly, set it to 206. We recovered it from the released depth maps with an
+We recovered it from the released depth maps with an
 estimator validated against known-answer synthetic data before use, cross-checked by a second
 independent mechanism: **206.6 px, IQR [204, 207] across 97 estimates.**
 

@@ -26,7 +26,7 @@ class FollowCamera:
     distance: float = 1.55
     height: float = 1.83
     pitch_deg: float = -8.0
-    focal_px: float = 202.0
+    focal_px: float = 206.0   # the measured released intrinsic; see StreetSpec
     shoulder_offset: float = 0.45
     boom_tau: float = 0.55
     aim_tau: float = 0.12

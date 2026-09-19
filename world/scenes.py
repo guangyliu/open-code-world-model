@@ -26,7 +26,12 @@ class StreetSpec:
     """Everything that varies between takes. Ranges are documented in batch.sample_spec."""
 
     seed: int = 33
-    focal_px: float = 202.0
+    # The released intrinsic, measured from their depth maps by an estimator validated on
+    # known-answer synthetic data and cross-checked by a second mechanism: 206.6 px at
+    # 336x192, IQR [204, 207] over 97 estimates. This used to be 202.0, carried over from
+    # an operating point fitted against a reference file that is not part of this
+    # repository; 206.0 matches `compiler.render.Camera` and the measurement.
+    focal_px: float = 206.0
     cam_height: float = 1.83
     aim_height: float = 1.20
     boom_len: float = 2.40
