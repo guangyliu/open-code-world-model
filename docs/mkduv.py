@@ -33,10 +33,10 @@ os.makedirs(DST, exist_ok=True)
 
 def write(frames, path):
     h, w = frames[0].shape[:2]
-    c = av.open(path, mode="w")
+    c = av.open(path, mode="w", options={"movflags": "+faststart"})
     s = c.add_stream("libx264", rate=24)
     s.width, s.height, s.pix_fmt = w * SCALE, h * SCALE, "yuv420p"
-    s.options = {"crf": "26", "preset": "slow", "movflags": "+faststart"}
+    s.options = {"crf": "26", "preset": "slow"}
     for f in frames:
         big = np.repeat(np.repeat(f, SCALE, 0), SCALE, 1)
         for pkt in s.encode(av.VideoFrame.from_ndarray(big, format="rgb24")):

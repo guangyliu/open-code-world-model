@@ -31,12 +31,12 @@ for name in names:
     w, h = istream.codec_context.width, istream.codec_context.height
     ow = WIDE if w >= h else int(round(WIDE * w / h / 2)) * 2
     oh = int(round(ow * h / w / 2)) * 2
-    o = av.open(dst, mode="w")
+    o = av.open(dst, mode="w", options={"movflags": "+faststart"})
     # faststart so the browser can begin playing before the whole file arrives; the page
     # autoplays several of these at once and without it the first frames stall.
     os_ = o.add_stream("libx264", rate=int(istream.average_rate or 24))
     os_.width, os_.height, os_.pix_fmt = ow, oh, "yuv420p"
-    os_.options = {"crf": CRF, "preset": "slow", "movflags": "+faststart"}
+    os_.options = {"crf": CRF, "preset": "slow"}
     n = 0
     for frame in i.decode(video=0):
         frame = frame.reformat(width=ow, height=oh, format="yuv420p")
