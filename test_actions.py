@@ -1867,6 +1867,103 @@ def t_articulation_covers_animals_and_planted_subjects():
     return ok
 
 
+def t_idle_amplitude_follows_the_clause():
+    """The idle amplitudes must trace to the prompt, not to their pixel count.
+
+    They were scaled to their measured 47 px/frame of class-8 change, and the check meant
+    to justify that was computed off the wrong bone: "an 18 degree shoulder swing moves the
+    hand about 10 cm" is the ELBOW. Measured at the forearm end the hand travels 34.1 cm
+    peak-to-peak, which against a walking swing at the SAME landmark (40.4 cm) is 84% -- four
+    fifths of a full walk on a subject the prompt describes as planted. That is not "a short
+    distance beside her thigh".
+
+    Two things are asserted, and the second exists because a one-sided version of this test
+    would pass a broken rig. The torso turn dominates the rendered mask change, so a sweep
+    that varies only IDLE_SWING_DEG reports the same pixel count at every arm angle and
+    concludes the amplitude does not matter. Both constants are therefore checked for being
+    load-bearing, not just the one the clause sentence happens to be about.
+    """
+    import numpy as np
+
+    from compiler import rig
+    from compiler.render import Camera, render_frame
+    from world import compile as wc
+    from world.state import Entity, WorldState
+
+    ok = True
+
+    def chain(pose_fn, n=49):
+        """Every primitive endpoint over a cycle, as (frames, points, 3)."""
+        out = []
+        for i in range(n):
+            h = rig.Human(position=np.zeros(3), facing_deg=0.0, pose=pose_fn(i / (n - 1.0)))
+            f = []
+            for q in h.primitives():
+                for a in ("a", "b", "centre"):
+                    v = getattr(q, a, None)
+                    if v is not None:
+                        f.append(np.asarray(v, float))
+            out.append(np.array(f))
+        return np.stack(out)
+
+    # The hand is named, not guessed: hold `lean` fixed so the arms are the only moving
+    # parts, and the largest excursion is then the forearm end by construction.
+    def arm_only(ph, amp):
+        sw = amp * float(np.sin(2 * np.pi * ph))
+        return rig.Pose(l_shoulder=-sw, r_shoulder=sw, l_elbow=12.0, r_elbow=12.0, lean=2.0)
+
+    probe = chain(lambda ph: arm_only(ph, rig.IDLE_SWING_DEG))
+    HAND = int(np.argmax(np.linalg.norm(probe.max(0) - probe.min(0), axis=1)))
+
+    def p2p(arr):
+        return float(np.linalg.norm(arr[:, HAND].max(0) - arr[:, HAND].min(0)))
+
+    idle_hand = p2p(chain(lambda ph: arm_only(ph, rig.IDLE_SWING_DEG)))
+    walk_hand = p2p(chain(lambda ph: rig.walk_pose(ph)))
+    frac = idle_hand / walk_hand
+    # "a short distance beside her thigh", against a full walking swing at the same point.
+    if frac > 0.5:
+        print(f"     idle hand swing is {100 * frac:.0f}% of a walking swing "
+              f"({100 * idle_hand:.1f} cm vs {100 * walk_hand:.1f} cm): not "
+              f"'a short distance beside her thigh'")
+        ok = False
+
+    # Both constants must reach the rendered mask, or a future one-sided sweep will report
+    # that whichever one it did not vary has no effect.
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.45, -2.0]), pitch_deg=-8.0)
+
+    def mask_change(turn, swing):
+        t0, s0 = rig.IDLE_TURN_DEG, rig.IDLE_SWING_DEG
+        rig.IDLE_TURN_DEG, rig.IDLE_SWING_DEG = turn, swing
+        try:
+            masks = []
+            for i in range(0, 49, 6):
+                st = WorldState(seed=0)
+                st.add(Entity("s", "human", [0.0, 0.0, 0.0], size=[0.55, 1.75, 0.40],
+                              speed=0.0, attrs={"idle_phase": i / 48.0}))
+                _z, ids = render_frame(cam, wc.PrimitiveCache().build(st))
+                masks.append(ids == 8)
+            return int(np.median([int((masks[k] ^ masks[k - 1]).sum())
+                                  for k in range(1, len(masks))]))
+        finally:
+            rig.IDLE_TURN_DEG, rig.IDLE_SWING_DEG = t0, s0
+
+    full = mask_change(rig.IDLE_TURN_DEG, rig.IDLE_SWING_DEG)
+    no_turn = mask_change(0.0, rig.IDLE_SWING_DEG)
+    no_swing = mask_change(rig.IDLE_TURN_DEG, 0.0)
+    for name, got in (("IDLE_TURN_DEG", no_turn), ("IDLE_SWING_DEG", no_swing)):
+        if full == 0 or got >= full:
+            print(f"     zeroing {name} did not reduce the rendered mask change "
+                  f"({got} vs {full}): it is not load-bearing, so a sweep that holds it "
+                  f"fixed would report no sensitivity")
+            ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] idle_amplitude_follows_the_clause "
+          f"(hand {100 * idle_hand:.1f} cm = {100 * frac:.0f}% of a walk; mask change "
+          f"{full} px, {no_turn} without turn, {no_swing} without swing)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1880,7 +1977,8 @@ if __name__ == "__main__":
              t_boom_holds_distance, t_aim_seeded_at_steady_state,
              t_framed_holds_the_opening_layout,
              t_window_rejects_a_still_and_a_pinned_pitch, t_aim_screen_y,
-             t_articulation_covers_animals_and_planted_subjects]
+             t_articulation_covers_animals_and_planted_subjects,
+             t_idle_amplitude_follows_the_clause]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
