@@ -23,9 +23,9 @@ for k, v in COL.items():
     LUT[k] = v
 
 EX = [18, 28, 30, 31, 34, 36]
-REL = "/mnt/weka/home/guangyi.liu/cwm/examples40"
-OURS = "/mnt/weka/home/guangyi.liu/cwm/ours/repro"
-DST = sys.argv[1] if len(sys.argv) > 1 else "/mnt/weka/home/guangyi.liu/cwm/release_draft/video"
+REL = os.environ.get("CWM_EXAMPLES", "examples40")
+OURS = os.environ.get("CWM_REPRO", "out/repro")
+DST = sys.argv[1] if len(sys.argv) > 1 else "docs/video"
 SCALE = 2
 
 os.makedirs(DST, exist_ok=True)

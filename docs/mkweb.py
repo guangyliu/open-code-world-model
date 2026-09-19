@@ -12,8 +12,8 @@ import sys
 
 import av
 
-SRC = "/mnt/weka/home/guangyi.liu/cwm/portb/out"
-DST = sys.argv[1] if len(sys.argv) > 1 else "/mnt/weka/home/guangyi.liu/cwm/release_draft/video"
+SRC = os.environ.get("CWM_OUT", "out")
+DST = sys.argv[1] if len(sys.argv) > 1 else "docs/video"
 WIDE = 960          # long edge; the page never shows a tile wider than 640 css px
 CRF = "30"
 
