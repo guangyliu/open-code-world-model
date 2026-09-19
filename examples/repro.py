@@ -57,6 +57,28 @@ SUFFIX = os.environ.get("CWM_REPRO_SUFFIX", "")
 
 # Per example: the StreetSpec overrides, plus a builder hook that adds or removes entities.
 # `note` is the divergence we already know about and will report.
+# Stand-off, derived rather than chosen. The old boom lengths were authored against a rig
+# that sagged 2*zeta*v/w0 behind a walking subject, so they were short by roughly that sag;
+# with the boom holding its anchor they put the subject far too close (ex30 filled 12.7% of
+# frame against their 8.6%, ex31 19.1% against their 3.4%).
+#
+# Where a prompt names only a qualitative size, their own conditions give the quantitative
+# anchor: the median class-8 depth over the held span is a measurement of THEIR lens-to-
+# subject distance, a physical quantity their prompt describes in words. The rig's geometry
+# is hypot(boom_len, shoulder_offset, cam_height - mid_figure) from lens to mid-figure, and
+# what the conditions record is depth to the SURFACE, nearer by a body half-depth. That
+# offset was measured per example from our own render (0.10-0.23 m for the humans, 1.00 m
+# for the 2.5 m-long stag) rather than assumed, and the relation solved for boom_len:
+#
+#     ex18  theirs 1.66 m  ->  1.67      ex30  theirs 1.73 m  ->  1.82
+#     ex28  theirs 1.84 m  ->  1.70      ex31  theirs 3.81 m  ->  4.75
+#     ex36  theirs 1.86 m  ->  1.89
+#
+# ex34 is excluded: its subject is airborne and its stand-off is driven by rise_gain and
+# pull_back, not boom_len, so the relation above does not hold and its boom is unchanged.
+#
+# Sky share and class mix are NOT inputs to any of this. They are reported as observations.
+
 PRESETS = {
     18: dict(
         why="water: class 2 is 52.8% of their window 0, the strongest water case in the 40",
@@ -64,8 +86,8 @@ PRESETS = {
                   n_buildings=0, n_backdrop=7, n_terraces=0, channel_w=0.0,
                   # "begins behind Conan at roughly shoulder height, slightly toward his
                   # left side" -- a height and a lateral offset, no vertical placement.
-                  base_speed=1.1, cam_height=1.55, boom_len=1.35,
-                  aim_screen_y=CENTRE),
+                  base_speed=1.1, cam_height=1.45, boom_len=1.67,
+                  aim_height=0.875, aim_screen_y=CENTRE),
         hook="canal",
         note="their canal is left-offset with sloping terraces both sides and lamps; ours is "
              "a straight channel with plain banks and no lamps",
@@ -77,7 +99,7 @@ PRESETS = {
                   # "He begins large in the lower center-left, seen from behind".
                   # aim_height is half his 1.75 m so aim_screen_y places HIM, not a point
                   # above his head; see FollowCamera.aim_screen_y.
-                  base_speed=1.9, boom_len=1.15, aim_height=0.875,
+                  base_speed=1.9, cam_height=1.45, boom_len=1.82, aim_height=0.875,
                   aim_screen_y=LOWER_THIRD),
         hook="reliquary",
         note="their pale slab road reads as class 0, not class 4, so ours uses bare ground "
@@ -91,7 +113,7 @@ PRESETS = {
                   n_terraces=0, channel_w=0.0, base_speed=2.6, cam_height=1.7,
                   # "She is seen from behind at lower center, with her body angled toward
                   # the upper right and her lower legs continuing beyond the bottom edge."
-                  boom_len=1.15, aim_height=0.875, aim_screen_y=LOWER_THIRD),
+                  boom_len=1.70, aim_height=0.875, aim_screen_y=LOWER_THIRD),
         hook="bigcraft",
         note="their vehicle is a living silk-moth with wings and a crowned head; ours is the "
              "wireframe box vehicle, so the silhouette is a hull, not a moth",
@@ -105,7 +127,7 @@ PRESETS = {
                   # directly from behind", and the camera sentence: "keeping the animal low
                   # and central". aim_height=0.0 aimed at its hooves to fake this, which
                   # put it HIGH in frame and pinned the pitch at -35.00 for all 124 frames.
-                  base_speed=4.2, cam_height=1.6, boom_len=2.2, aim_height=0.875,
+                  base_speed=4.2, cam_height=1.45, boom_len=4.75, aim_height=0.875,
                   aim_screen_y=LOWER_THIRD),
         hook="stag",
         note="our quadruped rig is the camel built for the other take; proportions are "
@@ -141,7 +163,8 @@ PRESETS = {
                   # height. Her prompt states no vertical placement -- "She stands left of
                   # center" -- so the framing is centred. aim_height=1.62 was the backwards
                   # knob pushed the other way, and is what put her at y=0.79.
-                  cam_height=1.45, boom_len=1.45, aim_screen_y=CENTRE),
+                  cam_height=1.45, boom_len=1.89, aim_height=0.875,
+                  aim_screen_y=CENTRE),
         hook="surveyor",
         note="their three machines differ in size and type; ours are three identical box "
              "vehicles at the described distances",
