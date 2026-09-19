@@ -253,7 +253,19 @@ def _render_one(job):
 def main() -> int:
     import multiprocessing as mp
 
-    want = [int(a) for a in sys.argv[1:]] or sorted(PRESETS)
+    args = sys.argv[1:]
+    valid = ", ".join(str(k) for k in sorted(PRESETS))
+    if any(a in ("-h", "--help") for a in args) or not all(a.lstrip("-").isdigit() for a in args):
+        print(f"usage: {Path(sys.argv[0]).name} [N ...]   regenerate released examples N (default: all)\n"
+              f"       valid N: {valid}\n"
+              f"       reads CWM_EXAMPLES (default examples40), writes CWM_REPRO_OUT (default out/repro)")
+        return 0 if any(a in ("-h", "--help") for a in args) else 2
+    want = [int(a) for a in args] or sorted(PRESETS)
+    # Validate before touching the filesystem, so a typo does not leave an empty out/repro/exNN.
+    unknown = [ex for ex in want if ex not in PRESETS]
+    if unknown:
+        print(f"no preset for example(s) {unknown}; valid N: {valid}", file=sys.stderr)
+        return 2
     for ex in want:
         cond = OUT / f"ex{ex:02d}{SUFFIX}" / "conditions"
         cond.mkdir(parents=True, exist_ok=True)
