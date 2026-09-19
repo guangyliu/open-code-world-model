@@ -25,7 +25,7 @@ class StreetSpec:
     """Everything that varies between takes. Ranges are documented in batch.sample_spec."""
 
     seed: int = 33
-    # The released intrinsic: 206.6 px at 336x192, IQR [204, 207] over 97 estimates,
+    # The released intrinsic: 206.6 px at 336x192, IQR [204.4, 208.2] over 97 estimates (inverse/focal_all.py),
     # recovered by the two-frame rigidity method in `inverse/focal.py`. NOT by
     # `probe.geometry.fit_ground` -- that needs euclidean range, and the released
     # conditions are z-depth, on which plane flatness is exactly f-invariant. This used to
