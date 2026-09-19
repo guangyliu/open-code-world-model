@@ -49,7 +49,16 @@ class FollowCamera:
     # the body centre lands at 0.880 and the feet at 1.332, i.e. below the frame. With
     # aim_height 0.875, half the figure, the body centre lands at 0.667. So a scene that
     # wants the SUBJECT at a screen position must aim at the middle of it.
-    aim_screen_y: float = 0.5
+    # None means NO placement request: the framing is left to `aim_height`, which is what
+    # a scene that never asked for a screen position expects. A float is an explicit
+    # request, and 0.5 is then an instruction to centre the silhouette, not a no-op.
+    #
+    # These cannot share a value. While this was a plain float defaulting to 0.5, "nothing
+    # requested" and "centre it" were the same thing, so making the request real silently
+    # reframed every scene that had never made one -- the shipped take moved on 476 of its
+    # 484 frames. It is the second time this shape has appeared here: `screen_bbox` needed
+    # `()` for offscreen and `None` for unboundable for the same reason.
+    aim_screen_y: float | None = None
     # Standing height of the subject being framed, so `aim_screen_y` can resolve against
     # its silhouette centroid instead of against the aim point. Without this a placement
     # request was not a placement request at all: it applied a fixed axis offset and left
@@ -131,13 +140,20 @@ class FollowCamera:
         the sign is positive. `t_aim_screen_y` projects a subject back and asserts the
         fraction it actually lands at, which pins this rather than trusting the derivation.
         """
-        if abs(self.aim_screen_y - 0.5) < 1e-9:
+        if self.aim_screen_y is None or abs(self.aim_screen_y - 0.5) < 1e-9:
             return 0.0
         return float(np.degrees(np.arctan(
             (self.aim_screen_y - 0.5) * OUT_H / self.focal_px)))
 
     def _place_h(self) -> float:
-        """Height above the subject's feet that `aim_screen_y` positions on screen."""
+        """Height above the subject's feet that the pitch is computed to.
+
+        With a placement request this is the figure's silhouette centroid, so the request
+        positions the FIGURE. With no request it is the aim point, which is the behaviour
+        of a scene that expresses its framing through `aim_height` alone.
+        """
+        if self.aim_screen_y is None:
+            return self.aim_height
         return self.subject_height * rig.SILHOUETTE_CENTRE_FRAC
 
     def _desired(self, target: np.ndarray, heading_deg: float) -> np.ndarray:

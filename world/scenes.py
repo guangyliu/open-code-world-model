@@ -41,7 +41,8 @@ class StreetSpec:
     aim_screen_x: float = 0.5
     # Vertical placement, read from the prompt by `world.shot.aim_y_for`. Faking it with
     # `aim_height` saturates the pitch clamp; see that function.
-    aim_screen_y: float = 0.5
+    # None = no vertical placement request; see FollowCamera.aim_screen_y.
+    aim_screen_y: float | None = None
     # Fitted on the shared scene against out/released_reference.json. head_diameter_m is
     # noticeably sensitive to these: the same rig reads 0.244 at tau 0.45 and 0.225 at
     # tau 0.70, because boom damping changes how much of the figure fills the frame.
