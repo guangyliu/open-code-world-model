@@ -62,13 +62,14 @@ bottleneck; the serial simulation ahead of it is. Set `CWM_WORKERS` accordingly.
 
 ```bash
 python validate_conditions.py out/my_take/conditions   # independent cold re-read
-python test_actions.py                                 # 11 scenario tests
+python test_actions.py                                 # 20 scenario tests
 python test_cull.py                                    # renderer invariants
 ```
 
-Two tools outside that path need more: `adherence_sheet.py` and `docs/mkweb.py` need PyAV to
-read and write video, and everything under `inverse/` needs SciPy. Nothing on the path above
-imports either — verified by import audit, not by assertion.
+Three directories outside that path need more: `inverse/` needs SciPy, `adherence_sheet.py`
+and `docs/mkweb.py` need PyAV, and `portb/` needs PyTorch and safetensors because it drives the
+video model. Nothing on the path above imports any of them — verified by import audit, not by
+assertion.
 
 ---
 
@@ -93,7 +94,7 @@ in 124 frames. There is no single rig to recover.
 
 We recovered it from the released depth maps with an
 estimator validated against known-answer synthetic data before use, cross-checked by a second
-independent mechanism: **206.6 px, IQR [204, 207] across 97 estimates.**
+independent mechanism: **206.6 px, IQR [204, 208] across 97 estimates** — re-derive it with `python inverse/focal_all.py`.
 
 ### The semantic vocabulary is smaller than the ontology
 
