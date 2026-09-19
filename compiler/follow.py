@@ -52,8 +52,14 @@ class FollowCamera:
     #   hold   - the body stops where it is; the aim keeps tracking the subject, so the
     #            viewpoint is fixed but the framing is not ("a close, steady vantage while
     #            she rotates")
-    #   lock   - locked off: body AND aim frozen, so the whole layout is preserved and the
-    #            subject drifts across the frame ("preserving the exact initial layout")
+    #   lock   - locked off: body AND aim frozen. Right for a genuinely fixed lens.
+    #   framed - follows, holding stand-off and screen position, but with the boom azimuth
+    #            frozen at its opening value and no secondary motion, so the subject stays
+    #            put in frame AND the background does not rotate on a turn. This is what
+    #            "preserving the opening layout" means in the released conditions: their
+    #            subject holds a constant distance through exactly that span (ex30 1.72-
+    #            1.76 m), and ex30's prompt says the camera "follows at a nearly constant
+    #            distance" in the same sentence group. `lock` was the wrong reading.
     #   orbit  - the boom swings around the subject at `orbit_rate` deg/s
     #   push   - the boom shortens toward `push_to` at `push_rate` m/s
     #   pull   - the boom lengthens toward `push_to`
@@ -74,6 +80,7 @@ class FollowCamera:
     _pos: np.ndarray | None = field(default=None, repr=False)
     _vel: np.ndarray | None = field(default=None, repr=False)  # relative to the anchor
     _off: np.ndarray | None = field(default=None, repr=False)  # camera pos minus anchor
+    _head0: float | None = field(default=None, repr=False)  # opening azimuth, for "framed"
     _yaw: float | None = field(default=None, repr=False)
 
     def _maybe_lock(self, cam: Camera) -> Camera:
@@ -136,7 +143,14 @@ class FollowCamera:
         elif self.mode in ("push", "pull"):
             step = self.push_rate * dt
             self._dist += float(np.clip(self.push_to - self._dist, -step, step))
-        want = self._desired(target, heading_deg)
+        # "framed" keeps the azimuth the boom opened with, so a turning subject does not
+        # swing the camera around itself and rotate the background. Secondary motion needs
+        # no suppression here: orbit, push and pull are only integrated for their own modes
+        # above. On frame 0 `_head0` is still None, which is correct -- that frame is what
+        # defines the opening azimuth.
+        head = self._head0 if (self.mode == "framed" and self._head0 is not None) \
+            else heading_deg
+        want = self._desired(target, head)
         if self._pos is None:
             # Zero offset and zero relative velocity: frame 0 is already the steady state,
             # so there is nothing to spring in from.
@@ -151,6 +165,7 @@ class FollowCamera:
             # stiffen tracking everywhere else.
             aim0 = target + np.array([0.0, -self.aim_height, 0.0]) - self._pos
             self._yaw = float(np.degrees(np.arctan2(aim0[0], aim0[2])))
+            self._head0 = heading_deg
         if self.mode == "hold":
             # Locked off: the rig keeps its pose and the subject moves through the frame.
             # The aim still tracks, which is what their "holds a steady vantage while she

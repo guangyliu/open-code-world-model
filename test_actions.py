@@ -1388,6 +1388,105 @@ def t_aim_seeded_at_steady_state():
     return ok
 
 
+def t_framed_holds_the_opening_layout():
+    """"Preserving the opening layout" is a FOLLOW with the framing frozen, not a frozen lens.
+
+    We routed the clause to `lock`, which freezes the camera body and the aim. Their data
+    says the opposite. Subject median depth on class-8 pixels over the first 31 frames, the
+    span the clause covers, is independent of how anything is framed:
+
+        ex30   theirs 1.72-1.76 m (range 0.04)    ours 1.18-3.39 m (range 2.22)
+        ex28   theirs 1.75-1.86 m (range 0.11)    ours 1.37-4.02 m (range 2.65)
+
+    Their subject stays at a constant distance throughout. The layout holds BECAUSE the
+    camera moves with the subject. And ex30's own prompt says so in as many words: "the
+    camera follows at a nearly constant distance with a gentle walking bob", in the same
+    sentence group as "preserving his large lower center-left placement". A lens that
+    watches the subject walk from 1.18 m to 3.39 m is not preserving a layout; it is
+    abandoning one.
+
+    So the clause needs a third behaviour, distinct from both of ours:
+      lock   - body and aim frozen. Right for a genuinely fixed lens.
+      follow - body tracks the subject's heading, so the camera swings around it on a turn
+               and the BACKGROUND rotates. Distance and screen position hold; layout does not.
+      framed - follows, holding distance and screen position, but with the boom azimuth
+               frozen at its opening value and secondary motion off. The subject stays put
+               in frame and so does the background. That is what the clause describes.
+
+    The routing lives in `world.shot.mode_for` so it is testable here rather than in the
+    scene script, which is outside the repo.
+    """
+    from compiler.follow import FollowCamera
+    from world import shot as shot_mod
+
+    ok = True
+    dt = 1.0 / FPS
+
+    if not hasattr(shot_mod, "mode_for"):
+        print("     world.shot has no mode_for: the hold clause is routed in the scene "
+              "script, where it cannot be tested, and it routes to lock")
+        print("[FAIL] framed_holds_the_opening_layout")
+        return False
+
+    sh = shot_mod.Shot(hold=True)
+    routed = shot_mod.mode_for(sh)
+    if routed != "framed":
+        print(f"     hold clause routes to {routed!r}, not 'framed'")
+        ok = False
+
+    def run(mode, n=31, speed=1.9, turn=40.0):
+        """Subject walks forward and turns, which is where the three modes separate."""
+        cam = FollowCamera(distance=1.15, boom_tau=0.55, zeta=0.55, aim_tau=0.15,
+                           height=1.83)
+        pos, head, out = np.zeros(3), 0.0, []
+        for k in range(n):
+            cam.mode = mode
+            c = cam.update(pos, head, dt)
+            rel = c.position - pos
+            # Azimuth of the camera around the subject: the background's orientation.
+            out.append((float(np.linalg.norm(rel)),
+                        float(np.degrees(np.arctan2(rel[0], rel[2]))),
+                        c.yaw_deg))
+            head = turn * (k + 1) / n
+            th = np.radians(head)
+            pos = pos + np.array([np.sin(th), 0.0, np.cos(th)]) * speed * dt
+        arr = np.array(out)
+        # Unwrap the azimuth: it crosses +/-180 here, and a raw arctan2 range reports a
+        # 40 deg swing as 358.7, which would read as a much larger effect than it is.
+        arr[:, 1] = np.degrees(np.unwrap(np.radians(arr[:, 1])))
+        return arr
+
+    got = run(routed)
+    d_rng = float(got[:, 0].max() - got[:, 0].min())
+    az_rng = float(got[:, 1].max() - got[:, 1].min())
+    if d_rng > 0.05:
+        print(f"     held span: stand-off ranges {got[:, 0].min():.2f}-{got[:, 0].max():.2f} m "
+              f"({d_rng:.2f} m) while the subject walks")
+        ok = False
+    if az_rng > 1.0:
+        print(f"     held span: boom azimuth swings {az_rng:.1f} deg as the subject turns, "
+              f"so the background rotates and the layout is not preserved")
+        ok = False
+
+    # The separation that makes this a behaviour and not a rename.
+    lock, follow = run("lock"), run("follow")
+    lock_d = float(lock[:, 0].max() - lock[:, 0].min())
+    follow_az = float(follow[:, 1].max() - follow[:, 1].min())
+    if lock_d < 0.5:
+        print(f"     lock no longer lets the subject walk away ({lock_d:.2f} m); the modes "
+              f"are not distinct and this test proves nothing")
+        ok = False
+    if follow_az < 20.0:
+        print(f"     follow no longer swings its azimuth on a turn ({follow_az:.1f} deg); "
+              f"framed would be a synonym for follow")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] framed_holds_the_opening_layout "
+          f"(framed: {d_rng:.3f} m / {az_rng:.1f} deg; lock lets {lock_d:.2f} m open; "
+          f"follow swings {follow_az:.1f} deg)")
+    return ok
+
+
 if __name__ == "__main__":
     import numpy as np  # actions reference np inside their exec namespace
     tests = [t_approach_and_stop, t_board_and_drive, t_mount_and_ride,
@@ -1398,7 +1497,8 @@ if __name__ == "__main__":
              t_visibility_counts_near_objects, t_checkdefs_scope,
              t_fit_ground_refuses_z_depth, t_validate_checks_sky_contract,
              t_cache_matches_fresh_build, t_window_arithmetic,
-             t_boom_holds_distance, t_aim_seeded_at_steady_state]
+             t_boom_holds_distance, t_aim_seeded_at_steady_state,
+             t_framed_holds_the_opening_layout]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
