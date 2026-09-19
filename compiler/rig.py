@@ -130,9 +130,25 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 # was supposed to justify the fit was also computed off the wrong bone, quoting 10 cm for
 # the hand when 10 cm is the ELBOW (hand 34.1 cm, elbow 20.4 cm at 18 degrees).
 #
-# So both constants come from the clause and ex36's shortfall is recorded rather than
-# closed: it lands at 26 px/frame against their 47. That gap is real and is not something
-# to spend amplitude on.
+# So the turn and the swing come from the clause, and ex36's shortfall is recorded rather
+# than closed: it lands at 26 px/frame against their 47. That gap is real and is not
+# something to spend amplitude on.
+#
+# IDLE_SWAY_DEG is the exception and is flagged rather than claimed. The clause describes a
+# head/chest turn and a hand swing; it says nothing about a breathing sway, so there is no
+# phrase to read this off. It is also the constant that decides whether ex36 clears the
+# articulation floor at all:
+#
+#     turn 6 / swing 8 / sway 1.5  ->  19 px/frame   FAILS the 20 px floor
+#     turn 6 / swing 8 / sway 2.0  ->  20 px/frame
+#     turn 6 / swing 8 / sway 3.0  ->  26 px/frame
+#
+# It is left at 3.0, the value it was raised to during the fit, because lowering it is what
+# pushes ex36 under the floor -- which means one constant in the idle path is still not
+# derived from anything. A clause-faithful turn and swing do NOT on their own carry this
+# subject over a floor anchored on their measurements; the sway is making up the
+# difference. That is a real tension between the two anchors and it is recorded here
+# unresolved rather than hidden by a number that happens to work.
 #
 # Both constants matter. The torso turn dominates the rendered mask change -- 286 px/frame
 # at full amplitude, 122 with the turn zeroed, 217 with the swing zeroed -- so a sweep that
@@ -141,7 +157,7 @@ SILHOUETTE_CENTRE_FRAC = 0.549
 #
 IDLE_TURN_DEG = 6.0
 IDLE_SWING_DEG = 8.0
-IDLE_SWAY_DEG = 1.5
+IDLE_SWAY_DEG = 3.0
 
 
 def idle_pose(phase: float) -> Pose:
