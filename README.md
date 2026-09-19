@@ -2,7 +2,7 @@
 
 **The open proxy generator for Code World Model — the half that wasn't released.**
 
-**[→ Project page with video](https://<you>.github.io/cwm-proxy/)** — the six comparisons, side by side, playable.
+**[→ Project page with video](https://guangyliu.github.io/cwm-proxy/)** — the six comparisons, side by side, playable.
 
 [Code World Model](https://github.com/buaacyw/code-world-model) (Chen, Lin & Zhang, arXiv 2608.25927)
 drives a video model with a *proxy*: a per-frame stream of metric depth and semantic-class maps,
@@ -47,7 +47,7 @@ primitive ranking from a single view, which scores `Plane` as the best model of 
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/cwm-proxy && cd cwm-proxy
+git clone https://github.com/guangyliu/cwm-proxy && cd cwm-proxy
 pip install numpy pillow          # everything below needs only these two
 python take_actions.py out/my_take
 ```
