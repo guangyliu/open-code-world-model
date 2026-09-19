@@ -39,7 +39,7 @@
   figure{margin:0}
   figcaption{margin-top:9px;font-size:13.5px;color:var(--dim)}
 
-  .pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .quad{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:18px;margin-bottom:22px}
   .card h3{margin:0 0 4px;font-size:18px;font-weight:620}
@@ -60,7 +60,7 @@
   footer{padding:48px 0 72px;color:var(--dim);font-size:14px}
 
   @media(max-width:720px){
-    .pair{grid-template-columns:1fr}
+    .quad{gap:9px}
     header{padding:48px 0 32px}
     section{padding:40px 0}
   }
@@ -105,24 +105,32 @@
     case in the 40. The clearest evidence the proxy is doing work — the figure sits centre-left
     in their DUV and centre-left in the video it drives; right-of-centre in ours, and
     right-of-centre in the video ours drives.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex18.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex18.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex18.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex18.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex18.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex18.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 
   <div class="card">
     <h3>ex36 — wide composition</h3>
     <p class="why">Road 46.9%, sky 26.0% — far wider than our own takes tend to frame.
     Near-identical: surveyor on a wet road, water tower, two vehicles.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex36.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex36.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex36.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex36.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex36.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex36.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 
   <div class="card">
@@ -130,12 +138,16 @@
     <p class="why">The protagonist is a white stag. It is semantic class <strong>8</strong>,
     not 9 — which is how we learned that class 8 encodes <em>the protagonist</em>, not
     "a human". Both produce the stag; ours sits higher in frame, as our DUV places it.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex31.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex31.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex31.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex31.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex31.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex31.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 
   <div class="card">
@@ -143,12 +155,16 @@
     <p class="why">Class 10 covers 15.2%, the largest vehicle presence in any window 0.
     Both render the giant silk-moth across the cobbled lane with the cart at upper right —
     although our vehicles are wireframe edges where theirs are solid masses.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex28.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex28.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex28.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex28.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex28.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex28.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 
   <div class="card">
@@ -156,12 +172,16 @@
     <p class="why">Their own prompt: "No vehicle, mount, carried object … is present."
     A baseline with nothing to place. Comparable; our vegetation is blobbier and our horizon
     sits higher.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex30.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex30.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex30.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex30.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex30.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex30.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 
   <div class="card flag">
@@ -173,12 +193,16 @@
     shots the video model is robust enough that the proxy contributes little. The underlying gap
     is real — a vista shot frames terrain, and our rig is a subject-following boom with no such
     mode.</p>
-    <div class="pair">
-      <figure><video src="video/rel_ex34.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
-      <figure><video src="video/our_ex34.mp4" controls loop muted playsinline preload="none"></video>
-        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
-    </div>
+    <div class="quad">
+        <figure><video src="video/duv_rel_ex34.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>their</strong> proxy</figcaption></figure>
+        <figure><video src="video/duv_our_ex34.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption><strong>our</strong> proxy</figcaption></figure>
+        <figure><video src="video/rel_ex34.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>theirs</strong> drives</figcaption></figure>
+        <figure><video src="video/our_ex34.mp4" controls loop muted playsinline preload="none"></video>
+          <figcaption>the video <strong>ours</strong> drives</figcaption></figure>
+      </div>
   </div>
 </section>
 
