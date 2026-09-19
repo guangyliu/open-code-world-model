@@ -1958,9 +1958,55 @@ def t_idle_amplitude_follows_the_clause():
                   f"fixed would report no sensitivity")
             ok = False
 
+    # The figures above are synthetic: one subject at a fixed camera, chosen to isolate
+    # the two constants. They do NOT predict the rendered example -- the synthetic setup
+    # reports 103 px where ex36's own preset rendered 19, a factor of five -- so the
+    # example the clause is quoted from is rendered here and held to the guard's own floor.
+    # Without this, every number in this test can be green while the deliverable it exists
+    # for is red.
+    import os
+    from pathlib import Path
+
+    from validate_conditions import ARTICULATION_MIN
+
+    ex_dir = Path(os.environ.get("CWM_EXAMPLES", "examples40"))
+    rendered = None
+    if not (ex_dir / "36" / "prompts" / "000.txt").exists():
+        print("     released examples not present (set CWM_EXAMPLES); the rendered check "
+              "on ex36 was SKIPPED, and the synthetic figures above do not predict it")
+    else:
+        from compiler.render import Camera as _Cam
+        from compiler.render import render_frame as _render
+        from examples import repro as _repro
+        from world.state import WorldState as _WS
+
+        # The WHOLE window, because anything less does not reproduce the guard and the two
+        # then drift apart -- which is the failure this check exists to prevent. Measured:
+        # the first 17 frames give 20 px and nine adjacent pairs spread across the cycle
+        # give 29, where the guard, which medians all 123 transitions of the 124-frame
+        # window, sees 26. The middle one even passed on a tree where the example failed.
+        # 124 renders cost about 17 s and are worth it for a number that cannot drift from
+        # the one validate_conditions computes.
+        plan = _repro.simulate(36)
+        masks = []
+        for _k, sj, cam_t in plan:
+            focal, pos, pitch, yaw, roll = cam_t
+            c = _Cam(focal_px=focal, position=np.array(pos), pitch_deg=pitch,
+                     yaw_deg=yaw, roll_deg=roll)
+            _z, ids = _render(c, wc.PrimitiveCache().build(_WS.from_json(sj)))
+            masks.append(ids == 8)
+        rendered = int(np.median([int((masks[i] ^ masks[i - 1]).sum())
+                                  for i in range(1, len(masks))]))
+        if rendered < ARTICULATION_MIN:
+            print(f"     ex36 renders {rendered} px/frame, below the "
+                  f"{ARTICULATION_MIN} px articulation floor its own window is held to")
+            ok = False
+
     print(f"[{'PASS' if ok else 'FAIL'}] idle_amplitude_follows_the_clause "
-          f"(hand {100 * idle_hand:.1f} cm = {100 * frac:.0f}% of a walk; mask change "
-          f"{full} px, {no_turn} without turn, {no_swing} without swing)")
+          f"(hand {100 * idle_hand:.1f} cm = {100 * frac:.0f}% of a walk; synthetic mask "
+          f"change {full} px, {no_turn} without turn, {no_swing} without swing; "
+          + (f"ex36 renders {rendered} px" if rendered is not None
+             else "ex36 render skipped") + ")")
     return ok
 
 
