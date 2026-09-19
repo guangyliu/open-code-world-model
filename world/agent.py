@@ -9,6 +9,11 @@ has to accept new executable rules, not just parameter changes.
 testable without credentials. An LLM-backed agent is a drop-in replacement: same
 `decide()` signature, prose and rule source produced by the model instead.
 
+`apply()` takes the take's `rules.RuleSet`, and `AddRule` registers into that. Rules are
+scoped to one take on purpose: they used to go into a module-level dict that outlived the
+take, so a second run in the same process began with every rule the first had written,
+active before the entities they reference existed.
+
 SECURITY: `AddRule` executes agent-authored Python. With an LLM on the other end that is
 arbitrary model-generated code execution. The namespace below is restricted, which is a
 speed bump and not a sandbox -- run the real thing in a container with no network and no
