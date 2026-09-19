@@ -2,6 +2,8 @@
 
 **The open proxy generator for Code World Model — the half that wasn't released.**
 
+**[→ Project page with video](https://<you>.github.io/cwm-proxy/)** — the six comparisons, side by side, playable.
+
 [Code World Model](https://github.com/buaacyw/code-world-model) (Chen, Lin & Zhang, arXiv 2608.25927)
 drives a video model with a *proxy*: a per-frame stream of metric depth and semantic-class maps,
 authored by a coding agent, that tells the model where everything is. The paper releases the

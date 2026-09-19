@@ -1,0 +1,241 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>cwm-proxy</title>
+<style>
+  :root{
+    --bg:#0c0d10; --panel:#141519; --line:#23252c; --ink:#e8e9ec; --dim:#9aa0ab;
+    --accent:#7fd1c1; --warn:#e0a458;
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+  a{color:var(--accent)}
+
+  header{padding:72px 0 40px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:clamp(34px,6vw,54px);letter-spacing:-.02em;font-weight:650}
+  .tag{margin:14px 0 0;font-size:clamp(17px,2.4vw,21px);color:var(--dim);max-width:60ch}
+  .links{margin-top:26px;display:flex;flex-wrap:wrap;gap:10px}
+  .links a{display:inline-block;padding:8px 15px;border:1px solid var(--line);
+    border-radius:8px;background:var(--panel);text-decoration:none;color:var(--ink);font-size:14px}
+  .links a:hover{border-color:var(--accent)}
+
+  section{padding:56px 0;border-bottom:1px solid var(--line)}
+  h2{margin:0 0 8px;font-size:26px;letter-spacing:-.01em;font-weight:620}
+  .sub{margin:0 0 28px;color:var(--dim);max-width:72ch}
+
+  .claim{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:22px 24px;margin-top:8px}
+  .claim p{margin:0 0 12px}
+  .claim p:last-child{margin:0}
+  .is{color:var(--accent);font-weight:600}
+  .isnt{color:var(--warn);font-weight:600}
+
+  video{width:100%;height:auto;display:block;background:#000;border-radius:8px}
+  figure{margin:0}
+  figcaption{margin-top:9px;font-size:13.5px;color:var(--dim)}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:18px;margin-bottom:22px}
+  .card h3{margin:0 0 4px;font-size:18px;font-weight:620}
+  .card .why{margin:0 0 16px;color:var(--dim);font-size:14.5px}
+  .flag{border-color:#5a4426}
+  .flag h3::after{content:"counter-example";margin-left:10px;font-size:11px;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--warn);
+    border:1px solid #5a4426;border-radius:20px;padding:3px 9px;vertical-align:middle}
+
+  table{border-collapse:collapse;width:100%;font-size:14.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:560}
+  td.num{font-family:ui-monospace,monospace}
+  .scroll{overflow-x:auto}
+
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px;overflow-x:auto;font-size:13.5px;line-height:1.6}
+  footer{padding:48px 0 72px;color:var(--dim);font-size:14px}
+
+  @media(max-width:720px){
+    .pair{grid-template-columns:1fr}
+    header{padding:48px 0 32px}
+    section{padding:40px 0}
+  }
+</style>
+
+<header class="wrap">
+  <h1>cwm-proxy</h1>
+  <p class="tag">The open proxy generator for Code World Model — the half that wasn't released.</p>
+  <div class="links">
+    <a href="https://github.com/buaacyw/code-world-model">Original project</a>
+    <a href="https://arxiv.org/abs/2608.25927">Paper (arXiv 2608.25927)</a>
+    <a href="https://buaacyw.github.io/cwm/">Their project page</a>
+  </div>
+</header>
+
+<section class="wrap">
+  <h2>What this is</h2>
+  <p class="sub">Code World Model drives a video model with a <em>proxy</em>: a per-frame
+  stream of metric depth and semantic-class maps that tells the model where everything is.
+  The paper releases the inference code, the LoRA, and 40 example proxies. It does not release
+  the thing that makes proxies. This is an independent implementation of that missing half —
+  a scripted world simulator and CPU ray tracer, NumPy only, no weights, no GPU.</p>
+
+  <div class="claim">
+    <p><span class="is">It produces</span> proxy conditions in the released format, at the
+    released camera intrinsics — which MiniMax-H3 accepts unmodified.</p>
+    <p><span class="isnt">It does not</span> reconstruct the authors' scenes. We built an
+    inverse renderer to find out: their water surface is exactly a plane and their road is a
+    plane to 1.4%, but everything else is film-grade mesh. On a stationary frame, re-rendering
+    their own recovered point cloud costs 0.03% depth error; our fitted primitives cost 0.60%
+    — about 20× worse. That is the honest size of the gap.</p>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>A complete take</h2>
+  <p class="sub">484 frames, 20.2 s, five windows joined with a 34-frame pinned overlap.
+  The protagonist walks, boards a cart, drives, dismounts onto a camel, rides, and flies —
+  every action scripted in the proxy, every caption compiled from the same simulation.</p>
+  <figure>
+    <video src="video/v3.mp4" controls loop muted playsinline preload="metadata"></video>
+    <figcaption>Proxy authored in ~25 s on CPU. Video: MiniMax-H3 with the CWM LoRA, 9 steps.</figcaption>
+  </figure>
+</section>
+
+<section class="wrap">
+  <h2>Six released examples, driven both ways</h2>
+  <p class="sub">For each example we author the scenario in our proxy from the authors' own
+  prompt, then generate video <strong>twice</strong> — once from their released conditions,
+  once from ours — holding the anchor image, the caption and the seed fixed. The proxy is the
+  only variable between the two clips.</p>
+
+  <div class="card">
+    <h3>ex18 — wading a canal</h3>
+    <p class="why">Chosen for water: class 2 covers 52.8% of the frame, the strongest water
+    case in the 40. The clearest evidence the proxy is doing work — the figure sits centre-left
+    in their DUV and centre-left in the video it drives; right-of-centre in ours, and
+    right-of-centre in the video ours drives.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex18.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex18.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>ex36 — wide composition</h3>
+    <p class="why">Road 46.9%, sky 26.0% — far wider than our own takes tend to frame.
+    Near-identical: surveyor on a wet road, water tower, two vehicles.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex36.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex36.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>ex31 — an animal protagonist</h3>
+    <p class="why">The protagonist is a white stag. It is semantic class <strong>8</strong>,
+    not 9 — which is how we learned that class 8 encodes <em>the protagonist</em>, not
+    "a human". Both produce the stag; ours sits higher in frame, as our DUV places it.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex31.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex31.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>ex28 — a vehicle at close range</h3>
+    <p class="why">Class 10 covers 15.2%, the largest vehicle presence in any window 0.
+    Both render the giant silk-moth across the cobbled lane with the cart at upper right —
+    although our vehicles are wireframe edges where theirs are solid masses.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex28.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex28.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>ex30 — a plain walk</h3>
+    <p class="why">Their own prompt: "No vehicle, mount, carried object … is present."
+    A baseline with nothing to place. Comparable; our vegetation is blobbier and our horizon
+    sits higher.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex30.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex30.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="card flag">
+    <h3>ex34 — flight</h3>
+    <p class="why">Their proxy is a high oblique vista over terrain, a lake and winding roads.
+    Ours is a ground-level corridor. The two disagree completely — <strong>and the videos come
+    out nearly identical.</strong> The anchor and the caption carried this shot, not the proxy.
+    We keep this panel because six hand-picked successes would misrepresent the method: on some
+    shots the video model is robust enough that the proxy contributes little. The underlying gap
+    is real — a vista shot frames terrain, and our rig is a subject-following boom with no such
+    mode.</p>
+    <div class="pair">
+      <figure><video src="video/rel_ex34.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>their</strong> proxy</figcaption></figure>
+      <figure><video src="video/our_ex34.mp4" controls loop muted playsinline preload="none"></video>
+        <figcaption>driven by <strong>our</strong> proxy</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2>What we measured about the released format</h2>
+  <p class="sub">Some of this is not documented anywhere we could find, and we needed it to
+  match the format. All of it came out of the 40 released examples.</p>
+
+  <div class="scroll"><table>
+    <tr><th>Focal length</th><td class="num">206.6 px</td>
+      <td>at 336×192, IQR [204, 207] over 97 estimates. Pitch and camera height are
+        <em>not</em> fixed — height spans 1.6 m to 231 m across the 40.</td></tr>
+    <tr><th>Semantic vocabulary</th><td class="num">{0,1,2,4,5,8,9,10}</td>
+      <td>The ontology has 12 ids; only these eight ever appear. Class 8 is
+        <em>the protagonist</em>, not "human" — which is why class 9 sits at 0.003%.</td></tr>
+    <tr><th>Class 0</th><td class="num">56.5%</td>
+      <td>Not a ground plane — a catch-all, planarity 1.2%–55%. Their road <em>is</em> a plane,
+        but not the class-0 plane (tilt 1.4°–70.9° between them).</td></tr>
+    <tr><th>Two encodings</th><td class="num">15 / 25</td>
+      <td>15 examples store float32 metres; 25 store uint16 fixed-log codes <em>in a float32
+        array</em>, with a different 2×2 resample. Only <code>metadata.json</code> tells them
+        apart.</td></tr>
+    <tr><th>Distinct geometries</th><td class="num">39</td>
+      <td>Examples 32 and 33 ship byte-identical conditions with different first frames.</td></tr>
+  </table></div>
+</section>
+
+<section class="wrap">
+  <h2>Try it</h2>
+  <pre>git clone https://github.com/&lt;you&gt;/cwm-proxy &amp;&amp; cd cwm-proxy
+pip install numpy pillow
+
+python take_actions.py out/my_take        # ~25 s, 484 frames of conditions + captions
+python validate_conditions.py out/my_take/conditions</pre>
+  <p class="sub" style="margin-top:22px">Then drive MiniMax-H3 with them:</p>
+  <pre>python portb/run_cp.py --conditions out/my_take/conditions \
+    --prompt-dir out/my_take/prompts --anchor first_frame.png \
+    --windows 5 --steps 20 --tag my_take</pre>
+</section>
+
+<footer class="wrap">
+  <p>Apache-2.0, matching the original project. This repository contains no code from it;
+  it does build on its released artifacts, attributed in <span class="mono">NOTICE</span>.</p>
+  <p>Cite the original work: Chen, Lin &amp; Zhang, <em>Code World Model: Coding Agent as
+  World Brain</em>, arXiv:2608.25927.</p>
+</footer>
