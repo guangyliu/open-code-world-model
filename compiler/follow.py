@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .render import OUT_W, Camera
+from .render import OUT_H, OUT_W, Camera
 
 
 @dataclass
@@ -38,6 +38,11 @@ class FollowCamera:
     # This rotates the optical axis; `shoulder_offset` moves the camera body and the aim
     # then cancels it, which is why it never changed the screen position.
     aim_screen_x: float = 0.5
+    # The vertical twin. 0.5 is the boom's own fixed point; larger puts the subject lower.
+    # Like aim_screen_x this rotates the optical axis and leaves `aim_height` -- the point
+    # on the subject being looked at -- alone. Using aim_height for placement instead is
+    # what pinned the pitch at its clamp for whole windows.
+    aim_screen_y: float = 0.5
     boom_tau: float = 0.55
     aim_tau: float = 0.12
     zeta: float = 0.55          # boom damping ratio; < 1 overshoots, 1 is critical
@@ -100,6 +105,18 @@ class FollowCamera:
             return 0.0
         return -float(np.degrees(np.arctan(
             (self.aim_screen_x - 0.5) * OUT_W / self.focal_px)))
+
+    def _pitch_offset(self) -> float:
+        """Degrees to tilt off the aim point so the subject lands at `aim_screen_y`.
+
+        v = cy/cz * f + H/2, and tilting the axis UP moves the subject DOWN the frame, so
+        the sign is positive. `t_aim_screen_y` projects a subject back and asserts the
+        fraction it actually lands at, which pins this rather than trusting the derivation.
+        """
+        if abs(self.aim_screen_y - 0.5) < 1e-9:
+            return 0.0
+        return float(np.degrees(np.arctan(
+            (self.aim_screen_y - 0.5) * OUT_H / self.focal_px)))
 
     def _desired(self, target: np.ndarray, heading_deg: float) -> np.ndarray:
         """Boom anchor: behind the subject along its heading, offset to one side.
@@ -177,7 +194,8 @@ class FollowCamera:
             pitch0 = np.degrees(np.arctan2(-aim0[1], np.hypot(aim0[0], aim0[2])))
             return self._maybe_lock(Camera(
                 focal_px=self.focal_px, position=self._pos.copy(),
-                pitch_deg=float(np.clip(pitch0, self.pitch_min, self.pitch_max)),
+                pitch_deg=float(np.clip(pitch0 + self._pitch_offset(),
+                                        self.pitch_min, self.pitch_max)),
                 yaw_deg=float(self._yaw + self._yaw_offset())))
         # Second-order spring-damper, run in the frame that MOVES WITH the boom anchor.
         #
@@ -223,5 +241,6 @@ class FollowCamera:
 
         return self._maybe_lock(Camera(
             focal_px=self.focal_px, position=self._pos.copy(),
-            pitch_deg=float(np.clip(pitch, self.pitch_min, self.pitch_max)),
+            pitch_deg=float(np.clip(pitch + self._pitch_offset(),
+                                    self.pitch_min, self.pitch_max)),
             yaw_deg=float(self._yaw + self._yaw_offset())))

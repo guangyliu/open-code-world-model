@@ -39,6 +39,9 @@ class StreetSpec:
     # does on its own; the released prompts often say otherwise ("left of center", "lower
     # center-left"), and `world.shot` reads that out of the prompt.
     aim_screen_x: float = 0.5
+    # Vertical placement, read from the prompt by `world.shot.aim_y_for`. Faking it with
+    # `aim_height` saturates the pitch clamp; see that function.
+    aim_screen_y: float = 0.5
     # Fitted on the shared scene against out/released_reference.json. head_diameter_m is
     # noticeably sensitive to these: the same rig reads 0.244 at tau 0.45 and 0.225 at
     # tau 0.70, because boom damping changes how much of the figure fills the frame.
@@ -164,7 +167,8 @@ def camera(spec: StreetSpec) -> FollowCamera:
                         aim_height=spec.aim_height, rise_gain=spec.rise_gain,
                         pull_back=spec.pull_back, rise_knee=spec.rise_knee,
                         pitch_min=spec.pitch_min, pitch_max=spec.pitch_max,
-                        aim_screen_x=spec.aim_screen_x)
+                        aim_screen_x=spec.aim_screen_x,
+                        aim_screen_y=spec.aim_screen_y)
 
 
 def street_take(spec: StreetSpec | None = None):
