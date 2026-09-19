@@ -59,6 +59,38 @@ def run(name: str, frames: int, spawns, sources, *, mounts=None, flying=None,
     return ok, s
 
 
+# The take this repository ships, as phase runs over its 484 frames. Pinned because
+# nothing else can pin it: `narrate.check` answers "do these captions describe this
+# simulation?", and it answers correctly even when the simulation is wrong -- a take where
+# a leaked rule flies the protagonist from frame 0 really IS a flying take, so captions
+# saying FLY are a true description of it. The question "is this the take we meant?" has
+# no source but an authored expectation, so here is the expectation.
+EXPECTED_RUNS = [("WALK", 0, 79), ("STAND", 80, 177), ("BOARD", 178, 208),
+                 ("DRIVE", 209, 249), ("MOUNT", 250, 277), ("RIDE_MOUNT", 278, 391),
+                 ("FLY", 392, 483)]
+
+
+def _runs(track):
+    out = []
+    for k, (st, _obj) in enumerate(track):
+        if out and out[-1][0] == st:
+            out[-1][2] = k
+        else:
+            out.append([st, k, k])
+    return [tuple(r) for r in out]
+
+
+def _check_expected_take(track, where):
+    """True when `track` is the shipped take. Prints the first divergence otherwise."""
+    got = _runs(track)
+    if got == EXPECTED_RUNS:
+        return True
+    print(f"     {where}: simulation is not the shipped take")
+    print(f"       expected {EXPECTED_RUNS}")
+    print(f"       got      {got}")
+    return False
+
+
 def t_approach_and_stop():
     src = A.build(A.APPROACH_AND_STOP, "approach", eid="taxi", sign=1.0,
                   stop_at=6.0, v_min=1.5, v_max=9.0, gain=0.55)
@@ -268,7 +300,21 @@ def t_caption_compiler():
             ok = False
             print(f"     noun-rich driving sentence classified {narrate.classify(drive)}")
 
-        # 3. Corrupting one segment must be caught. Rewrite window 2 to claim he is standing
+        # 3. The gate must be sensitive to the SIMULATION, not only to the file. Both
+        #    existing negatives corrupt the text; this one keeps the text and moves the
+        #    world underneath it. Without this, breaking `window_states` so that build and
+        #    check both read the wrong frames would leave check(build(x)) == [] and every
+        #    other assertion here still green.
+        for shift in (15, 90):
+            other = plan[shift:] + [plan[-1]] * shift
+            moved = narrate.check(td, other, TAKE_PHASES, TAKE_WINDOWS,
+                                  actor_names=take_content()["actor_names"])
+            if not moved:
+                print(f"     captions still matched a take shifted {shift} frames; the "
+                      f"check does not read the simulation")
+                ok = False
+
+        # 4. Corrupting one segment must be caught. Rewrite window 2 to claim he is standing
         #    when the simulation has him boarding or driving.
         w2 = Path(td) / "002.txt"
         txt = w2.read_text(encoding="utf-8")
@@ -308,6 +354,11 @@ def t_actor_captions():
     plan, _, _ = simulate_take(check=False)
     track = narrate.derive_track(plan, TAKE_PHASES)
     names = take_content()["actor_names"]
+
+    # This test passed against a world where a leaked rule had the protagonist airborne
+    # from frame 0, because the captions described that world correctly. Pin the world.
+    if not _check_expected_take(track, "t_actor_captions"):
+        ok = False
 
     # 1. The cart really is halted over the stretch the control tested (proxy 180-210).
     phases = narrate.actor_phases(plan, "taxi", 90, 213, track)
@@ -421,6 +472,9 @@ def t_class_vocabulary():
 
     ok = True
     plan, _, _ = simulate_take(check=False)
+    from world import narrate as _nr
+    if not _check_expected_take(_nr.derive_track(plan, TAKE_PHASES), "t_class_vocabulary"):
+        ok = False
     cam = Camera(focal_px=206.0, position=np.array([0.0, -1.83, 0.0]), pitch_deg=-8.0)
     seen = set()
     # Sample across the take so every kind that ever spawns is covered, the broom included.
@@ -692,9 +746,13 @@ def t_take_is_reentrant():
         "a, _, _ = T.simulate(check=False)\n"
         "mid = sorted(rules.names())\n"
         "b, _, _ = T.simulate(check=False)\n"
+        # Every frame's full state, not just the courier: a leak into any entity counts,
+        # and courier altitude is how the symptom SHOWS, not how it is detected.
+        "same = sum(1 for x, y in zip(a, b) if x[1] == y[1])\n"
         "ya = [json.loads(f[1])['entities']['courier']['position'][1] for f in a]\n"
         "yb = [json.loads(f[1])['entities']['courier']['position'][1] for f in b]\n"
-        "print(json.dumps({'before': before, 'mid': mid, 'ya': ya, 'yb': yb}))\n"
+        "print(json.dumps({'before': before, 'mid': mid, 'same': same,\n"
+        "                  'n': len(a), 'ya': ya, 'yb': yb}))\n"
         % str(Path(_ta.__file__).resolve().parent)
     )
     r = subprocess.run([_sys.executable, "-c", probe], capture_output=True, text=True)
@@ -713,7 +771,11 @@ def t_take_is_reentrant():
         print(f"     registry leaked {sorted(mid - before)} after one take")
         ok = False
 
-    # And the two takes must be identical, frame for frame.
+    # Every frame of the two takes must match, over the whole state and not one field.
+    if d["same"] != d["n"]:
+        print(f"     only {d['same']}/{d['n']} frames identical between the two runs")
+        ok = False
+
     if not np.array_equal(ya, yb):
         k = int(np.argmax(ya != yb))
         print(f"     run 2 diverges at frame {k}: courier y {ya[k]:+.2f} vs {yb[k]:+.2f}")
@@ -725,7 +787,64 @@ def t_take_is_reentrant():
         ok = False
 
     print(f"[{'PASS' if ok else 'FAIL'}] take_is_reentrant "
-          f"(registry {len(before)} -> {len(mid)}, run2 opens at {-yb[0]:.2f} m)")
+          f"(registry {len(before)} -> {len(mid)}, identical frames {d['same']}/{d['n']}, "
+          f"run2 opens at {-yb[0]:.2f} m)")
+    return ok
+
+
+def t_visibility_counts_near_objects():
+    """An object the camera is inside the bounding sphere of is visible, not invisible.
+
+    `screen_bbox` has three outcomes: `()` dead or wholly offscreen, `None` for a sphere
+    that straddles the eye plane and cannot be bounded, and a tuple otherwise. The
+    invariant tested `if bb:`, and `None` is falsy, so the one case meaning "this thing is
+    all around the lens" scored the same as "this thing is not in shot". Measured on the
+    shipped take, the taxi at f132 fills 11.4% of the frame and was counted not visible;
+    the report read taxi 73% and gunship 79% where the truth is 100% and 100%. It passed
+    only because 73 and 79 clear the 60% default, so the margin was being eaten silently.
+
+    Also pins the sphere to the body: `courier` carries the default size [1,1,1], so the
+    0.97 threshold on the protagonist was testing a 0.5 m ball at his knees.
+    """
+    import numpy as np
+
+    from compiler.render import Camera, screen_bbox
+    from world.invariants import Invariants
+    from world.scenes import StreetSpec, build
+    from world.state import Entity, WorldState
+
+    ok = True
+    cam = Camera(focal_px=206.0, position=np.array([0.0, -1.7, 0.0]), pitch_deg=0.0)
+
+    # A van-sized body straddling the lens: maximally visible, and unboundable.
+    near = Entity("van", "vehicle", [0.0, 0.0, 1.2], size=[4.0, 2.0, 5.0])
+    bb = screen_bbox(cam, near.pos + np.array([0.0, -1.0, 0.0]), 2.5, 336, 192)
+    if bb is not None:
+        print(f"     staging failed: wanted an unboundable sphere, screen_bbox gave {bb!r}")
+        ok = False
+
+    st = WorldState(seed=0)
+    st.add(near)
+    inv = Invariants()
+    inv.visible_windows = {"van": (0, 0)}
+    inv.check(st, cam, 0)
+    inv.finish()
+    if inv.violations:
+        print(f"     a body wrapped around the lens scored invisible: "
+              f"{inv.violations[0].detail}")
+        ok = False
+
+    # The protagonist's sphere must cover the rig, not a ball at his knees.
+    world = build(StreetSpec())
+    c = world.get("courier")
+    if float(max(c.size)) < 1.4:
+        print(f"     courier bounding size is {list(c.size)}, a "
+              f"{float(max(c.size)) / 2:.2f} m sphere -- smaller than the rig")
+        ok = False
+
+    print(f"[{'PASS' if ok else 'FAIL'}] visibility_counts_near_objects "
+          f"(unboundable sphere -> {'visible' if not inv.violations else 'INVISIBLE'}, "
+          f"courier sphere r={float(max(c.size)) / 2:.2f} m)")
     return ok
 
 
@@ -735,7 +854,8 @@ if __name__ == "__main__":
              t_fly_on_prop, t_descend_and_ballistic, t_flight_camera,
              t_caption_compiler, t_actor_captions,
              t_water_surface, t_class_vocabulary, t_camera_modes,
-             t_aim_screen_x, t_shot_parse, t_take_is_reentrant]
+             t_aim_screen_x, t_shot_parse, t_take_is_reentrant,
+             t_visibility_counts_near_objects]
     results = [t() for t in tests]
     n_ok = sum(bool(r) for r in results)
     print(f"\n{n_ok}/{len(results)} actions clean")
