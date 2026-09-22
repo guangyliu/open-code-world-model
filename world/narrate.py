@@ -53,7 +53,7 @@ PREAMBLE_WN = (
 )
 
 # ---------------------------------------------------------------- protagonist states
-STAND, WALK = "STAND", "WALK"
+STAND, WALK, JUMP = "STAND", "WALK", "JUMP"
 BOARD, RIDE_VEHICLE, DRIVE = "BOARD", "RIDE_VEHICLE", "DRIVE"
 MOUNT, RIDE_MOUNT, FLY = "MOUNT", "RIDE_MOUNT", "FLY"
 
@@ -62,6 +62,7 @@ MOUNT, RIDE_MOUNT, FLY = "MOUNT", "RIDE_MOUNT", "FLY"
 SIGNATURE = {
     STAND: "his mark",
     WALK: "on foot",
+    JUMP: "leaps",
     BOARD: "climbs in",
     RIDE_VEHICLE: "seated inside",
     DRIVE: "rides inside",
@@ -79,6 +80,13 @@ PHRASES = {
         "He stays on his mark, head level, the mantle of rain-blackened reeds hanging heavy "
         "across his shoulders",
         "He keeps his mark on the streaming paving, boots planted, watching the lane ahead",
+    ],
+    JUMP: [
+        "He leaps, both boots leaving the wet stone together, and comes down a stride further "
+        "on",
+        "He leaps clear of the paving and lands with his weight forward, the mantle lifting "
+        "and settling",
+        "He leaps once more, a short bound over the streaming stone, and carries on",
     ],
     WALK: [
         "The rainkeeper carries himself along the wet causeway on foot, his mantle swinging "
@@ -168,6 +176,7 @@ CAMERA_FLIGHT = (
 OPENING = {
     STAND: "At this instant he stands still on {place}",
     WALK: "At this instant he is crossing {place} on foot",
+    JUMP: "At this instant he is in the air above {place}, mid-leap",
     BOARD: "At this instant he is climbing in through the open side of the rain-cart on {place}",
     RIDE_VEHICLE: "At this instant he sits inside the halted rain-cart on {place}",
     DRIVE: "At this instant he is being carried along {place} inside the moving rain-cart",
@@ -177,10 +186,13 @@ OPENING = {
 }
 
 
-def audit_phrases() -> list[str]:
-    """Every variant carries its own signature and no other state's. Run by the tests."""
+def audit_phrases(phrases: dict | None = None, opening: dict | None = None) -> list[str]:
+    """Every variant carries its own signature and no other state's. Run by the tests, and
+    by `build` on a take's own phrase tables when it supplies them."""
     bad = []
-    for state, variants in PHRASES.items():
+    phrases = PHRASES if phrases is None else phrases
+    opening = OPENING if opening is None else opening
+    for state, variants in phrases.items():
         sig = SIGNATURE[state]
         for v in variants:
             low = v.lower()
@@ -193,8 +205,8 @@ def audit_phrases() -> list[str]:
         for t, tsig in SIGNATURE.items():
             if s != t and (sig in tsig or tsig in sig):
                 bad.append(f"signatures {s}/{t} are not distinguishable: {sig!r} vs {tsig!r}")
-    for s in (STAND, WALK, BOARD, RIDE_VEHICLE, DRIVE, MOUNT, RIDE_MOUNT, FLY):
-        if s not in OPENING:
+    for s in (STAND, WALK, JUMP, BOARD, RIDE_VEHICLE, DRIVE, MOUNT, RIDE_MOUNT, FLY):
+        if s not in opening:
             bad.append(f"{s} has no OPENING sentence")
     return bad
 
@@ -377,7 +389,8 @@ def actor_phases(plan, eid, f0: int, f1: int, track, min_run: int = 10):
     return [(st, a, b) for st, a, b in merged]
 
 
-def _other_actors(plan, w: int, names: dict, track) -> str:
+def _other_actors(plan, w: int, names: dict, track, actor_phrase: dict | None = None,
+                  no_actors: str | None = None) -> str:
     """Every actor that is really present, described phase by phase.
 
     Presence is measured, and so is motion: an actor alive for less than a fifth of the
@@ -401,29 +414,37 @@ def _other_actors(plan, w: int, names: dict, track) -> str:
                 continue
             t0 = round(WINDOW_SECONDS * (a - f0) / max(n - 1, 1), 2)
             t1 = round(WINDOW_SECONDS * (b - f0) / max(n - 1, 1), 2)
-            lines.append(f"{t0:.2f}\u2013{t1:.2f}s, {label}: {ACTOR_PHRASE[st]}")
+            lines.append(f"{t0:.2f}\u2013{t1:.2f}s, {label}: {(actor_phrase or ACTOR_PHRASE)[st]}")
     if not lines:
-        return (f"0.00\u2013{WINDOW_SECONDS:.2f}s: No other visible person, animal, vessel, "
-                f"or independently moving identity appears; only the distant rain-carts and "
-                f"the falling rain move in the scene.")
+        return no_actors or (
+            f"0.00\u2013{WINDOW_SECONDS:.2f}s: No other visible person, animal, vessel, "
+            f"or independently moving identity appears; only the distant rain-carts and "
+            f"the falling rain move in the scene.")
     return "; ".join(lines) + "."
 
 
 # ------------------------------------------------------------------- assembly
 def window_caption(track, plan, w: int, content: dict, n_segments: int = SEGMENTS) -> str:
+    # A take may carry its own phrase tables (the prose is scene-specific; the SIGNATURES
+    # are not). Everything the gate checks -- signatures, section layout, segment count --
+    # is unchanged by that; only the words around the signatures are.
+    phrases = content.get("phrases", PHRASES)
+    opening = content.get("opening", OPENING)
     states = window_states(track, w, n_segments)
     actions = []
     for state, obj, frac in states:
-        variants = PHRASES[state]
+        variants = phrases[state]
         actions.append(variants[min(int(frac * len(variants)), len(variants) - 1)]
                        .format(obj=obj))
-    camera = CAMERA_FLIGHT if any(st == FLY for st, _, _ in states) else CAMERA_GROUND
+    camera = (content.get("camera_flight", CAMERA_FLIGHT)
+              if any(st == FLY for st, _, _ in states) else content.get("camera_ground", CAMERA_GROUND))
     cap = Caption(
         protagonist=content["identity"],
-        scene=OPENING[states[0][0]].format(place=content["place"]) + ". " + content["scene"],
+        scene=opening[states[0][0]].format(place=content["place"]) + ". " + content["scene"],
         actions=actions,
         other_actors_appearance=content["others_appearance"] + " " + camera,
-        other_actors=_other_actors(plan, w, content["actor_names"], track),
+        other_actors=_other_actors(plan, w, content["actor_names"], track,
+                                   content.get("actor_phrase"), content.get("no_actors")),
     )
     body = cap.render()
     return (PREAMBLE_W0 if w == 0 else PREAMBLE_WN) + "\n\n" + body
@@ -439,6 +460,10 @@ def build(plan, phases, content: dict, out_dir, windows: int,
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if "phrases" in content or "opening" in content:
+        bad = audit_phrases(content.get("phrases", PHRASES), content.get("opening", OPENING))
+        if bad:
+            raise ValueError("take's phrase tables fail the signature audit: " + "; ".join(bad[:3]))
     track = derive_track(plan, phases)
     written = []
     for w in range(windows):
