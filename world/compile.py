@@ -53,7 +53,8 @@ class PrimitiveCache:
                 round(e.heading_deg, 3), round(float(e.attrs.get("gait_phase", 0.0)), 4),
                 round(float(e.attrs.get("idle_phase", 0.0)), 4),
                 round(float(e.attrs.get("scale", 1.0)), 4), tuple(e.size), e.alive,
-                round(e.speed, 4), e.kind, e.attrs.get("class_id"))
+                round(e.speed, 4), e.kind, e.attrs.get("class_id"),
+                round(float(e.attrs.get("down_frac", 0.0)), 4))
 
     def build(self, s: WorldState, *, ground_class: int = 0) -> list:
         out = list(_ground(s, ground_class))
@@ -117,6 +118,15 @@ def _entity_shapes(e) -> list:
         pose = (rig.walk_pose(e.attrs.get("gait_phase", 0.0), run=e.speed > 2.0)
                 if walking else rig.idle_pose(idle))
         facing = e.heading_deg + (0.0 if walking else rig.idle_turn(idle))
+        down = float(e.attrs.get("down_frac", 0.0))
+        if down > 0.0:
+            # Knocked down: a rigid backward lean about the feet, limbs straight (no idle
+            # sway on a body on the ground), raised by one torso radius as it flattens so
+            # the capsules lie on the road rather than half in it. -90 = flat on the back.
+            pose = rig.Pose(lean=-90.0 * down)
+            facing = e.heading_deg
+            p = p.copy()
+            p[1] -= rig.TORSO_R * float(e.attrs.get("scale", 1.0)) * down
         return rig.Human(position=np.array([p[0], p[1], p[2]]), facing_deg=facing,
                          pose=pose,
                          scale=float(e.attrs.get("scale", 1.0))).primitives()

@@ -177,6 +177,30 @@ def {name}(s):
 """
 
 
+KNOCKDOWN = """
+def {name}(s):
+    a = s.get("{attacker}")
+    t = s.entities.get("{target}")
+    if t is None or not t.alive:
+        return
+    if not t.attrs.get("hit"):
+        gap = ((float(a.pos[0]) - float(t.pos[0])) ** 2
+               + (float(a.pos[2]) - float(t.pos[2])) ** 2) ** 0.5
+        if gap > {reach}:
+            return
+        # One hit. No punch is rendered: the proxy shows the consequence, the caption
+        # names the act, and the video model draws the blow.
+        t.attrs["hit"] = 1.0
+        a.attrs["{name}_pause"] = {pause_s}
+        s.log("hit", t.eid, by=a.eid, distance=round(gap, 2))
+    # The attacker stands over the fall, then carries on.
+    left = float(a.attrs.get("{name}_pause", 0.0))
+    if left > 0.0:
+        a.attrs["{name}_pause"] = left - s.dt
+        a.speed = 0.0
+"""
+
+
 def build(template: str, name: str, **kw) -> str:
     """Instantiate one action's source. Missing keys fail here, not at exec time."""
     return template.format(name=name, **kw)
