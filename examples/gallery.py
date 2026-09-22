@@ -41,8 +41,10 @@ from world.scenes import StreetSpec, build, camera            # noqa: E402
 from world.state import Entity, WorldState                    # noqa: E402
 
 FPS, FRAMES = 24, 124
+WINDOWS = int(os.environ.get("CWM_GALLERY_WINDOWS", "1"))
+FRAMES = 124 + 90 * (WINDOWS - 1)          # the released 124 / 90-stride / Retake34 layout
 EXAMPLES = Path(os.environ.get("CWM_EXAMPLES", "examples40"))
-OUT = Path(os.environ.get("CWM_GALLERY_OUT", "out/gallery"))
+OUT = Path(os.environ.get("CWM_GALLERY_OUT", "out/gallery" if WINDOWS == 1 else f"out/gallery_{WINDOWS}w"))
 JUMP_V0, G = 3.2, 9.81
 
 
@@ -152,7 +154,7 @@ SCENES = {
                   base_speed=3.0, cam_height=1.3, boom_len=3.85, aim_height=0.875,
                   aim_screen_x=0.447, aim_screen_y=0.555),
         hook="frostcourt",
-        jumps=(28, 82),
+        jumps=(28, 82, 150, 214, 286, 352),      # only the first two fall inside one window
         script=lambda: {},
         phases=[narrate.Phase(narrate.JUMP, "courier", "jump_t", None, "")],
         visible={"courier": (0, FRAMES - 1)},
@@ -357,8 +359,8 @@ def run(name: str) -> int:
         print(f"{name}: invariants violated; not rendering")
         return 1
     content = CONTENT[name]
-    written = narrate.build(plan, sc["phases"], content, out / "prompts", 1)
-    bad = narrate.check(out / "prompts", plan, sc["phases"], 1, actor_names=content["actor_names"])
+    written = narrate.build(plan, sc["phases"], content, out / "prompts", WINDOWS)
+    bad = narrate.check(out / "prompts", plan, sc["phases"], WINDOWS, actor_names=content["actor_names"])
     if bad:
         print(f"{name}: captions disagree with the simulation:")
         for b in bad:
@@ -374,11 +376,11 @@ def run(name: str) -> int:
         list(pool.imap_unordered(_render_one, [(str(cond), *r) for r in plan], chunksize=1))
     k, sj, cam_t = plan[0]
     z, ids = _render_one((None, k, sj, cam_t))
-    meta = dict(scene=name, anchor_example=sc["anchor"], frames=FRAMES, target=sc["target"],
+    meta = dict(scene=name, anchor_example=sc["anchor"], frames=FRAMES, windows=WINDOWS, target=sc["target"],
                 frame0=frame0_stats(z, ids), events=[(e.kind, round(e.t, 2), e.subject) for e in s.events][:40],
                 render_s=round(time.time() - t0, 1))
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
-    print(f"{name}: {FRAMES} frames in {meta['render_s']}s -> {out}   caption {written[0].name}")
+    print(f"{name}: {FRAMES} frames ({WINDOWS} windows) in {meta['render_s']}s -> {out}   captions {len(written)}")
     return 0
 
 
