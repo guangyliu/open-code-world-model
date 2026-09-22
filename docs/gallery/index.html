@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gallery — does the LoRA read the proxy?</title>
+<style>
+:root{--bg:#f3f2ee;--panel:#fff;--ink:#1c1b1f;--mute:#5f5e66;--line:#dcdad3;--mono:ui-monospace,Menlo,Consolas,monospace;--sans:system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#17181d;--panel:#1f2027;--ink:#e8e7ee;--mute:#a4a3ad;--line:#33343d}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding:32px clamp(16px,4vw,48px) 64px}
+main{max-width:1240px;margin:0 auto} h1{font-size:clamp(22px,3vw,30px);margin:0 0 6px} h2{font-size:19px;margin:0 0 4px}
+.lede{color:var(--mute);max-width:80ch;margin:0 0 28px} .blurb{color:var(--mute);max-width:90ch;margin:0 0 12px}
+.scene{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:26px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+figure{margin:0} video,img{display:block;width:100%;max-width:100%;border-radius:8px;background:#000;aspect-ratio:672/384}
+figure video[src$="_proxy.mp4"]{aspect-ratio:672/768}
+figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .missing div{aspect-ratio:672/384;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:var(--mute)}
+</style></head><body><main>
+<h1>Does the LoRA read the proxy?</h1>
+<p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics.</p>
+<section class="scene" id="boulevard">
+<header><h2>Board and drive off</h2><p class="blurb">He walks up the boulevard; a shuttle comes down it, halts beside him; he climbs in; it pulls away with him inside. Anchor: released example 40.</p></header>
+<div class="row">
+  <figure><img src="video/boulevard_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 40</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.424 / 0.417, y 0.504 / 0.508, lens→subject 2.97 / 2.96 m, sky 0.0; 124 frames, conditions clean</p>
+</section><section class="scene" id="causeway">
+<header><h2>A wagon passes, the camera eases back</h2><p class="blurb">He runs up the shoulder; a wagon comes down the causeway on his right and passes; the boom lengthens from 3.75 to 6.5 m as it does. Anchor: example 19.</p></header>
+<div class="row">
+  <figure><img src="video/causeway_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 19</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.501 / 0.501, y 0.573 / 0.571, lens→subject 3.8 / 3.79 m, sky 0.106; 124 frames, conditions clean</p>
+</section><section class="scene" id="stream">
+<header><h2>Turn away from the river</h2><p class="blurb">He runs along the water's edge, then breaks right; the follow rig swings round behind him and the river leaves the frame. Anchor: example 4.</p></header>
+<div class="row">
+  <figure><img src="video/stream_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 4</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/stream_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/stream_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/stream_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.436 / 0.436, y 0.612 / 0.606, lens→subject 3.93 / 3.87 m, sky 0.108; 124 frames, conditions clean</p>
+</section><section class="scene" id="witchroad">
+<header><h2>Stop, and the camera orbits</h2><p class="blurb">He walks to the reliquary, stands for two seconds while the camera swings 40° round him, then walks on. Anchor: example 30.</p></header>
+<div class="row">
+  <figure><img src="video/witchroad_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 30</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.367 / 0.363, y 0.588 / 0.584, lens→subject 1.83 / 1.76 m, sky 0.138; 124 frames, conditions clean</p>
+</section><section class="scene" id="frostcourt">
+<header><h2>Two leaps</h2><p class="blurb">He runs across the apron and leaps the curb twice; the caption carries the leaps because the JUMP state is read from the simulation. Anchor: example 25.</p></header>
+<div class="row">
+  <figure><img src="video/frostcourt_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 25</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.446 / 0.447, y 0.586 / 0.586, lens→subject 3.9 / 3.83 m, sky 0.018; 124 frames, conditions clean</p>
+</section><section class="scene" id="monastery">
+<header><h2>Stop, push in, pull back</h2><p class="blurb">He runs up the road, stops at the drums while the camera pushes in from 4 m to 2.2 m, then runs on as it drops back. Anchor: example 13.</p></header>
+<div class="row">
+  <figure><img src="video/monastery_anchor.jpg" alt=""><figcaption>anchor: released first frame, example 13</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+</div>
+<p class="meta">frame 0 vs anchor — subject x 0.574 / 0.575, y 0.542 / 0.544, lens→subject 4.02 / 4.03 m, sky 0.098; 124 frames, conditions clean</p>
+</section>
+<p class="lede">Made with <code>examples/gallery.py</code> and <code>docs/mkgallery.py</code>. Videos re-encoded for the web at 672 px; the conditions themselves are 336×192 float32 depth + uint8 semantic ids.</p>
+</main></body></html>
