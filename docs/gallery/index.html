@@ -13,7 +13,7 @@ figure video[src$="_proxy.mp4"]{aspect-ratio:672/768}
 figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .missing div{aspect-ratio:672/384;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:var(--mute)}
 </style></head><body><main>
 <h1>Does the LoRA read the proxy?</h1>
-<p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics.</p>
+<p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics. Where a fourth video is shown, it is LynnReal-Omni (a 32B H3-architecture model with native frame-aligned controls) given the same proxy as a control video, zero-shot: no LoRA, the same anchor, the same caption content rewritten into its six-section prompt.</p>
 <section class="scene" id="boulevard">
 <header><h2>Board and drive off</h2><p class="blurb">He walks up the boulevard; a shuttle comes down it, halts beside him; he climbs in; it pulls away with him inside. Anchor: released example 40.</p></header>
 <div class="row">
@@ -21,6 +21,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.424 / 0.417, y 0.504 / 0.508, lens→subject 2.97 / 2.96 m, sky 0.0; 124 frames, conditions clean</p>
 </section><section class="scene" id="causeway">
@@ -30,6 +31,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/causeway_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.501 / 0.501, y 0.573 / 0.571, lens→subject 3.8 / 3.79 m, sky 0.106; 124 frames, conditions clean</p>
 </section><section class="scene" id="stream">
@@ -39,6 +41,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/stream_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/stream_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/stream_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/stream_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.436 / 0.436, y 0.612 / 0.606, lens→subject 3.93 / 3.87 m, sky 0.108; 124 frames, conditions clean</p>
 </section><section class="scene" id="witchroad">
@@ -48,6 +51,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/witchroad_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.367 / 0.363, y 0.588 / 0.584, lens→subject 1.83 / 1.76 m, sky 0.138; 124 frames, conditions clean</p>
 </section><section class="scene" id="frostcourt">
@@ -57,6 +61,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.446 / 0.447, y 0.586 / 0.586, lens→subject 3.9 / 3.83 m, sky 0.018; 124 frames, conditions clean</p>
 </section><section class="scene" id="monastery">
@@ -66,6 +71,7 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
   <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_proxy.mp4"></video><figcaption>our proxy — semantic over depth, 124 frames</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)</figcaption></figure>
   <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/monastery_lynn.mp4"></video><figcaption>LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA</figcaption></figure>
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.574 / 0.575, y 0.542 / 0.544, lens→subject 4.02 / 4.03 m, sky 0.098; 124 frames, conditions clean</p>
 </section>
