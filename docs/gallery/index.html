@@ -5,7 +5,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#17181d;--panel:#1f2027;--ink:#e8e7ee;--mute:#a4a3ad;--line:#33343d}}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding:32px clamp(16px,4vw,48px) 64px}
 main{max-width:1240px;margin:0 auto} h1{font-size:clamp(22px,3vw,30px);margin:0 0 6px} h2{font-size:19px;margin:0 0 4px}
-.lede{color:var(--mute);max-width:80ch;margin:0 0 28px} .blurb{color:var(--mute);max-width:90ch;margin:0 0 12px}
+.lede{color:var(--mute);max-width:80ch;margin:0 0 28px} h2.part{font-size:22px;margin:36px 0 14px} .blurb{color:var(--mute);max-width:90ch;margin:0 0 12px}
 .scene{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:26px}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
 figure{margin:0} video,img{display:block;width:100%;max-width:100%;border-radius:8px;background:#000;aspect-ratio:672/384}
@@ -69,5 +69,18 @@ figcaption,.meta{font:12.5px var(--mono);color:var(--mute);margin-top:6px} .miss
 </div>
 <p class="meta">frame 0 vs anchor — subject x 0.574 / 0.575, y 0.542 / 0.544, lens→subject 4.02 / 4.03 m, sky 0.098; 124 frames, conditions clean</p>
 </section>
+<h2 class="part">Long takes, the authors' way</h2><section class="scene" id="boulevard-long">
+<header><h2>Board and drive off — 4 windows, 394 frames (16.4 s)</h2><p class="blurb">The same scene carried on: 4 windows of 124 frames with 90 new frames each, Retake34 overlap pinned, one caption compiled per window, stitched with the overlap dropped.</p></header>
+<div class="row">
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_4w_proxy.mp4"></video><figcaption>our proxy, 394 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_4w_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/boulevard_4w_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA</figcaption></figure>
+</div></section><section class="scene" id="frostcourt-long">
+<header><h2>Two leaps — 4 windows, 394 frames (16.4 s)</h2><p class="blurb">The same scene carried on: 4 windows of 124 frames with 90 new frames each, Retake34 overlap pinned, one caption compiled per window, stitched with the overlap dropped.</p></header>
+<div class="row">
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_4w_proxy.mp4"></video><figcaption>our proxy, 394 frames</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_4w_nolora.mp4"></video><figcaption>MiniMax-H3, native reference mode (no LoRA)</figcaption></figure>
+  <figure><video controls muted loop playsinline preload="metadata" src="video/frostcourt_4w_lora.mp4"></video><figcaption>MiniMax-H3 + CWM LoRA</figcaption></figure>
+</div></section>
 <p class="lede">Made with <code>examples/gallery.py</code> and <code>docs/mkgallery.py</code>. Videos re-encoded for the web at 672 px; the conditions themselves are 336×192 float32 depth + uint8 semantic ids.</p>
 </main></body></html>
