@@ -120,6 +120,33 @@ def main():
 </div>
 <p class="meta">frame 0 vs anchor — subject x {f0['cx']} / {t['cx']}, y {f0['cy']} / {t['cy']}, lens→subject {f0['z8']} / {t['z8']} m, sky {f0['sky']}; {nf} frames, conditions clean</p>
 </section>""")
+    # Long takes, generated the authors' way: 124 + 90 per window with Retake34 overlap,
+    # stitched by portb/stitch.py. Looked for beside the gallery as out/gallery_4w.
+    longs = []
+    lg = f"{os.path.dirname(a.gallery.rstrip('/'))}/gallery_4w" if os.path.dirname(a.gallery.rstrip('/')) else "out/gallery_4w"
+    for n in ORDER:
+        d = f"{lg}/{n}"
+        if not os.path.isdir(d):
+            continue
+        meta = json.load(open(f"{d}/meta.json"))
+        sz, nf = proxy_video(f"{d}/conditions", f"{a.dst}/video/{n}_4w_proxy.mp4"); total += sz
+        have = {}
+        for mode in ("nolora", "lora"):
+            src = f"{a.videos}/gal4w_{n}_{mode}.mp4"
+            if os.path.exists(src):
+                sz, _ = transcode(src, f"{a.dst}/video/{n}_4w_{mode}.mp4"); total += sz
+                have[mode] = True
+        vid = lambda k, cap: (f'<figure><video controls muted loop playsinline preload="metadata" src="video/{n}_4w_{k}.mp4"></video><figcaption>{cap}</figcaption></figure>'
+                              if (k == "proxy" or have.get(k)) else f'<figure class="missing"><div>not rendered</div><figcaption>{cap}</figcaption></figure>')
+        title = BLURB[n][0]
+        longs.append(f"""<section class="scene" id="{n}-long">
+<header><h2>{title} — {meta['windows']} windows, {nf} frames ({nf/24:.1f} s)</h2><p class="blurb">The same scene carried on: {meta['windows']} windows of 124 frames with 90 new frames each, Retake34 overlap pinned, one caption compiled per window, stitched with the overlap dropped.</p></header>
+<div class="row">
+  {vid("proxy", f"our proxy, {nf} frames")}
+  {vid("nolora", "MiniMax-H3, native reference mode (no LoRA)")}
+  {vid("lora", "MiniMax-H3 + CWM LoRA")}
+</div></section>""")
+    long_html = ("<h2 class=\"part\">Long takes, the authors' way</h2>" + "".join(longs)) if longs else ""
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gallery — does the LoRA read the proxy?</title>
 <style>
@@ -127,7 +154,7 @@ def main():
 @media (prefers-color-scheme:dark){{:root{{--bg:#17181d;--panel:#1f2027;--ink:#e8e7ee;--mute:#a4a3ad;--line:#33343d}}}}
 body{{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding:32px clamp(16px,4vw,48px) 64px}}
 main{{max-width:1240px;margin:0 auto}} h1{{font-size:clamp(22px,3vw,30px);margin:0 0 6px}} h2{{font-size:19px;margin:0 0 4px}}
-.lede{{color:var(--mute);max-width:80ch;margin:0 0 28px}} .blurb{{color:var(--mute);max-width:90ch;margin:0 0 12px}}
+.lede{{color:var(--mute);max-width:80ch;margin:0 0 28px}} h2.part{{font-size:22px;margin:36px 0 14px}} .blurb{{color:var(--mute);max-width:90ch;margin:0 0 12px}}
 .scene{{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:26px}}
 .row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}}
 figure{{margin:0}} video,img{{display:block;width:100%;max-width:100%;border-radius:8px;background:#000;aspect-ratio:672/384}}
@@ -137,6 +164,7 @@ figcaption,.meta{{font:12.5px var(--mono);color:var(--mute);margin-top:6px}} .mi
 <h1>Does the LoRA read the proxy?</h1>
 <p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics.</p>
 {''.join(cards)}
+{long_html}
 <p class="lede">Made with <code>examples/gallery.py</code> and <code>docs/mkgallery.py</code>. Videos re-encoded for the web at 672 px; the conditions themselves are 336×192 float32 depth + uint8 semantic ids.</p>
 </main></body></html>"""
     open(f"{a.dst}/index.html", "w").write(html)

@@ -4,3 +4,4 @@ out/
 *.mp4
 # ...except the project page gallery, which is the point of the page.
 !docs/video/*.mp4
+!docs/gallery/video/*.mp4
