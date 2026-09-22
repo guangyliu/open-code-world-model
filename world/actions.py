@@ -201,6 +201,45 @@ def {name}(s):
 """
 
 
+ALIGHT = """
+def {name}(s):
+    v = s.entities.get("{vehicle}")
+    h = s.get("{rider}")
+    if v is None or not v.alive or not v.attrs.get("boarded"):
+        return
+    # Wait for the vehicle to have (nearly) stopped: stepping out of a moving car is a
+    # stunt. A braking rule that eases off exponentially never reaches exactly zero, so
+    # once he starts to step out this rule holds the vehicle still itself, for good.
+    if abs(float(v.speed)) > 0.3 and not v.attrs.get("{name}_t"):
+        return
+    v.speed = 0.0
+    if v.attrs.get("{name}_done"):
+        return
+    t = float(v.attrs.get("{name}_t", 0.0)) + s.dt
+    v.attrs["{name}_t"] = t
+    k = min(t / {alight_s}, 1.0)
+    th = np.radians(v.heading_deg)
+    right = np.array([np.cos(th), 0.0, -np.sin(th)])
+    door = v.pos + right * ({side} * (float(v.size[0]) / 2.0 + 0.6))
+    seat = float(v.size[1]) * {seat_frac}
+    h.pos = [float(v.pos[0]) + (float(door[0]) - float(v.pos[0])) * k,
+             -seat * (1.0 - k),
+             float(v.pos[2]) + (float(door[2]) - float(v.pos[2])) * k]
+    h.heading_deg = v.heading_deg
+    h.speed = 0.0
+    if k >= 1.0:
+        v.attrs["boarded"] = 0.0
+        v.attrs["arrived"] = 0.0
+        v.attrs["{name}_done"] = 1.0
+        # The ride is over: drop every action's running-time attribute on the vehicle
+        # (board_t, drive_t, this one's), or the caption phases that key on them would
+        # go on saying he is climbing in after he has walked away.
+        for key in [k for k in v.attrs if k.endswith("_t")]:
+            v.attrs.pop(key, None)
+        h.speed = {walk_speed}
+"""
+
+
 def build(template: str, name: str, **kw) -> str:
     """Instantiate one action's source. Missing keys fail here, not at exec time."""
     return template.format(name=name, **kw)

@@ -54,7 +54,7 @@ PREAMBLE_WN = (
 
 # ---------------------------------------------------------------- protagonist states
 STAND, WALK, JUMP = "STAND", "WALK", "JUMP"
-BOARD, RIDE_VEHICLE, DRIVE = "BOARD", "RIDE_VEHICLE", "DRIVE"
+BOARD, RIDE_VEHICLE, DRIVE, ALIGHT = "BOARD", "RIDE_VEHICLE", "DRIVE", "ALIGHT"
 MOUNT, RIDE_MOUNT, FLY = "MOUNT", "RIDE_MOUNT", "FLY"
 
 # The one substring that identifies each state when a sentence is read back. Each names the
@@ -66,6 +66,7 @@ SIGNATURE = {
     BOARD: "climbs in",
     RIDE_VEHICLE: "seated inside",
     DRIVE: "rides inside",
+    ALIGHT: "steps out",
     MOUNT: "pulls himself up",
     RIDE_MOUNT: "astride",
     FLY: "on the broom",
@@ -112,6 +113,11 @@ PHRASES = {
         "He rides inside the {obj} as it pulls away along the flooded lane",
         "He rides inside the moving {obj}, the causeway sliding past its open side",
         "He rides inside the {obj} while it carries him on down the wet roadway",
+    ],
+    ALIGHT: [
+        "He steps out of the halted {obj} onto the wet stone, gathering the mantle as he goes",
+        "He steps out through the open side of the {obj} and finds his feet on the paving",
+        "He steps out and leaves the {obj} standing behind him",
     ],
     MOUNT: [
         "He steps in close to the flank of the {obj} and pulls himself up onto its back",
@@ -180,6 +186,7 @@ OPENING = {
     BOARD: "At this instant he is climbing in through the open side of the rain-cart on {place}",
     RIDE_VEHICLE: "At this instant he sits inside the halted rain-cart on {place}",
     DRIVE: "At this instant he is being carried along {place} inside the moving rain-cart",
+    ALIGHT: "At this instant he is stepping out of the halted rain-cart onto {place}",
     MOUNT: "At this instant he is climbing onto the back of the pale camel on {place}",
     RIDE_MOUNT: "At this instant he sits high on the back of the pale camel on {place}",
     FLY: "At this instant he is already aloft on the broom, well above {place}",
@@ -205,7 +212,7 @@ def audit_phrases(phrases: dict | None = None, opening: dict | None = None) -> l
         for t, tsig in SIGNATURE.items():
             if s != t and (sig in tsig or tsig in sig):
                 bad.append(f"signatures {s}/{t} are not distinguishable: {sig!r} vs {tsig!r}")
-    for s in (STAND, WALK, JUMP, BOARD, RIDE_VEHICLE, DRIVE, MOUNT, RIDE_MOUNT, FLY):
+    for s in (STAND, WALK, JUMP, BOARD, RIDE_VEHICLE, DRIVE, ALIGHT, MOUNT, RIDE_MOUNT, FLY):
         if s not in opening:
             bad.append(f"{s} has no OPENING sentence")
     return bad
