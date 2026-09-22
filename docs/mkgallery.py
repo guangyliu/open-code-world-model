@@ -64,7 +64,7 @@ def transcode(src, dst, width=672):
     frames = []
     for f in c.decode(video=0):
         im = f.to_image()
-        im = im.resize((width, round(im.height * width / im.width)))
+        im = im.resize((width, 2 * round(im.height * width / im.width / 2)))   # yuv420p needs even dims (960x544 -> 672x380)
         frames.append(np.array(im))
     fps = float(c.streams.video[0].average_rate or 24)
     c.close()
@@ -82,12 +82,58 @@ def proxy_video(cond, dst):
     return write(frames, dst), len(frames)
 
 
+# LynnReal-Omni driven chunk by chunk: 22 frames per chunk, frame 0 pinned to the last delivered
+# frame, one resident process (lynnreal/chunk_drive.py). Tag -> label, in table order.
+CHUNK_RUNS = [
+    ("auto", "as released: cuDNN attention, official VAE, every module staged to CPU between phases"),
+    ("auto_lightvae", "as released, lightweight VAE"),
+    ("_flash_3", "FlashAttention-3"),
+    ("_flash_3_lightvae", "FlashAttention-3, lightweight VAE"),
+    ("fa3_pin_nostage", "FlashAttention-3, nothing staged, text encoder pinned on the GPU"),
+    ("fa3_pin_nostage_lightvae", "same, lightweight VAE"),
+]
+CHUNK_VIDEOS = ["auto", "fa3_pin_nostage"]
+
+
+def chunk_section(runs, proxy, dst):
+    rows, have = [], {}
+    for tag, label in CHUNK_RUNS:
+        tj = f"{runs}/boulevard_540_{tag}/timing.json"
+        if not os.path.exists(tj):
+            continue
+        t = json.load(open(tj))
+        ch = t["chunks"][1:] or t["chunks"]
+        med = lambda k: sorted(c[k] for c in ch)[len(ch) // 2]
+        new = ch[0]["new_frames"]
+        rows.append(f"<tr><td>{label}</td><td>{med('conditioning_s'):.1f}</td><td>{med('generate_s'):.1f}</td><td>{med('dit_s'):.1f}</td>"
+                    f"<td>{med('decode_s'):.2f}</td><td>{max(c['peak_gb'] for c in ch):.0f}</td><td>{(med('conditioning_s') + med('generate_s')) / (new / 24):.0f}×</td></tr>")
+        if tag in CHUNK_VIDEOS:
+            transcode(f"{runs}/boulevard_540_{tag}/take.mp4", f"{dst}/video/chunked_{tag}.mp4")
+            have[tag] = label
+    if not rows:
+        return ""
+    if proxy:
+        transcode(proxy, f"{dst}/video/chunked_proxy.mp4")
+    vids = [f'<figure><video controls muted loop playsinline preload="metadata" src="video/chunked_{k}.mp4"></video><figcaption>{v}</figcaption></figure>' for k, v in have.items()]
+    if proxy:
+        vids.insert(0, '<figure><video controls muted loop playsinline preload="metadata" src="video/chunked_proxy.mp4"></video><figcaption>the control video: our proxy as a flat-shaded game render, 960×544, cut into 22-frame chunks with a 21-frame stride</figcaption></figure>')
+    return f"""<h2 class="part">Streaming, chunk by chunk</h2>
+<section class="scene" id="chunked">
+<header><h2>Boulevard, 540p, six chunks of 22 frames</h2><p class="blurb">The release has no entry that takes a frame-aligned control and streams, so this borrows its anchored structure-edit recipe: each chunk is a video-edit conditioned on the anchor and that chunk's proxy, with the last frame of the previous chunk pinned into the first latent slot. 21 new frames (0.88 s) per chunk, four denoiser steps, one H200, one resident process. Seams are as continuous as the frames inside a chunk; what drifts is texture, the road coarsening chunk by chunk because only one frame carries over.</p></header>
+<div class="row">{''.join(vids)}</div>
+<table class="timing"><thead><tr><th>configuration</th><th>conditioning s</th><th>generate s</th><th>of which DiT (4 steps)</th><th>decode s</th><th>peak GB</th><th>× slower than real time</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
+<p class="meta">medians over chunks 1–5. Conditioning is the Qwen3-VL-32B text encoder reading the prompt, the anchor and the chunk's proxy; as released it is moved CPU→GPU→CPU every chunk. The staged runs move eight DiT blocks and the VAE decoder around every VAE phase. Pinning both on a 141 GB card removes 60 s per chunk; the four DiT steps at 3.35 s each are what is left.</p>
+</section>"""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gallery", default="out/gallery")
     ap.add_argument("--videos", required=True, help="dir holding gal_<scene>_lora.mp4 / _nolora.mp4")
     ap.add_argument("--dst", default="docs/gallery")
     ap.add_argument("--lynn", default=None, help="dir holding <scene>_game.mp4 from LynnReal-Omni video-edit (optional fourth column)")
+    ap.add_argument("--chunk-runs", default=None, help="dir holding boulevard_540_<tag>/{take.mp4,timing.json} from lynnreal/chunk_drive.py (optional streaming section)")
+    ap.add_argument("--chunk-proxy", default=None, help="the 540p proxy control video those runs were driven by")
     a = ap.parse_args()
     os.makedirs(f"{a.dst}/video", exist_ok=True)
     cards, total = [], 0
@@ -152,6 +198,7 @@ def main():
   {vid("lora", "MiniMax-H3 + CWM LoRA")}
 </div></section>""")
     long_html = ("<h2 class=\"part\">Long takes, the authors' way</h2>" + "".join(longs)) if longs else ""
+    chunk_html = chunk_section(a.chunk_runs, a.chunk_proxy, a.dst) if a.chunk_runs else ""
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gallery — does the LoRA read the proxy?</title>
 <style>
@@ -164,12 +211,15 @@ main{{max-width:1240px;margin:0 auto}} h1{{font-size:clamp(22px,3vw,30px);margin
 .row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}}
 figure{{margin:0}} video,img{{display:block;width:100%;max-width:100%;border-radius:8px;background:#000;aspect-ratio:672/384}}
 figure video[src$="_proxy.mp4"]{{aspect-ratio:672/768}}
-figcaption,.meta{{font:12.5px var(--mono);color:var(--mute);margin-top:6px}} .missing div{{aspect-ratio:672/384;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:var(--mute)}}
+figcaption,.meta{{font:12.5px var(--mono);color:var(--mute);margin-top:6px}}
+table.timing{{border-collapse:collapse;width:100%;margin-top:14px;font:13px var(--mono);font-variant-numeric:tabular-nums}} .timing th,.timing td{{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}} .timing td:not(:first-child),.timing th:not(:first-child){{text-align:right;white-space:nowrap}}
+#chunked .row{{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}} #chunked video{{aspect-ratio:960/544}} .missing div{{aspect-ratio:672/384;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:var(--mute)}}
 </style></head><body><main>
 <h1>Does the LoRA read the proxy?</h1>
 <p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics. Where a fourth video is shown, it is LynnReal-Omni (a 32B H3-architecture model with native frame-aligned controls) given the same proxy as a control video, zero-shot: no LoRA, the same anchor, the same caption content rewritten into its six-section prompt.</p>
 {''.join(cards)}
 {long_html}
+{chunk_html}
 <p class="lede">Made with <code>examples/gallery.py</code> and <code>docs/mkgallery.py</code>. Videos re-encoded for the web at 672 px; the conditions themselves are 336×192 float32 depth + uint8 semantic ids.</p>
 </main></body></html>"""
     open(f"{a.dst}/index.html", "w").write(html)
