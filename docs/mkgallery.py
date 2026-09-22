@@ -87,6 +87,7 @@ def main():
     ap.add_argument("--gallery", default="out/gallery")
     ap.add_argument("--videos", required=True, help="dir holding gal_<scene>_lora.mp4 / _nolora.mp4")
     ap.add_argument("--dst", default="docs/gallery")
+    ap.add_argument("--lynn", default=None, help="dir holding <scene>_game.mp4 from LynnReal-Omni video-edit (optional fourth column)")
     a = ap.parse_args()
     os.makedirs(f"{a.dst}/video", exist_ok=True)
     cards, total = [], 0
@@ -106,6 +107,9 @@ def main():
             if src:
                 sz, _ = transcode(src, f"{a.dst}/video/{n}_{mode}.mp4"); total += sz
                 have[mode] = True
+        if a.lynn and os.path.exists(f"{a.lynn}/{n}_game.mp4"):
+            sz, _ = transcode(f"{a.lynn}/{n}_game.mp4", f"{a.dst}/video/{n}_lynn.mp4"); total += sz
+            have["lynn"] = True
         t, f0 = meta["target"], meta["frame0"]
         title, blurb = BLURB[n]
         vid = lambda k, cap: (f'<figure><video controls muted loop playsinline preload="metadata" src="video/{n}_{k}.mp4"></video><figcaption>{cap}</figcaption></figure>'
@@ -117,6 +121,7 @@ def main():
   {vid("proxy", "our proxy — semantic over depth, 124 frames")}
   {vid("nolora", "MiniMax-H3, native reference mode (anchor + proxy video + caption, no LoRA)")}
   {vid("lora", "MiniMax-H3 + CWM LoRA — same anchor, proxy, caption and seed")}
+  {vid("lynn", "LynnReal-Omni video-edit, zero-shot — the proxy as its frame-aligned control video, no LoRA") if have.get("lynn") else ""}
 </div>
 <p class="meta">frame 0 vs anchor — subject x {f0['cx']} / {t['cx']}, y {f0['cy']} / {t['cy']}, lens→subject {f0['z8']} / {t['z8']} m, sky {f0['sky']}; {nf} frames, conditions clean</p>
 </section>""")
@@ -162,7 +167,7 @@ figure video[src$="_proxy.mp4"]{{aspect-ratio:672/768}}
 figcaption,.meta{{font:12.5px var(--mono);color:var(--mute);margin-top:6px}} .missing div{{aspect-ratio:672/384;border:1px dashed var(--line);border-radius:8px;display:grid;place-items:center;color:var(--mute)}}
 </style></head><body><main>
 <h1>Does the LoRA read the proxy?</h1>
-<p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics.</p>
+<p class="lede">Six scenes. Each starts from a released first frame (for its style) and everything after frame 0 is ours: the geometry, the actions, the camera, and the caption compiled from the same simulation. MiniMax-H3 then generates each scene twice with the same anchor, proxy video, caption and seed — once in its native reference mode, once with the CWM LoRA. The only variable is whether the model was taught to read depth and semantics. Where a fourth video is shown, it is LynnReal-Omni (a 32B H3-architecture model with native frame-aligned controls) given the same proxy as a control video, zero-shot: no LoRA, the same anchor, the same caption content rewritten into its six-section prompt.</p>
 {''.join(cards)}
 {long_html}
 <p class="lede">Made with <code>examples/gallery.py</code> and <code>docs/mkgallery.py</code>. Videos re-encoded for the web at 672 px; the conditions themselves are 336×192 float32 depth + uint8 semantic ids.</p>

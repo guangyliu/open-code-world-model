@@ -6,6 +6,8 @@ Both are derived deterministically from the same state -- nothing is invented he
 """
 from __future__ import annotations
 
+import os
+
 import zlib
 
 import numpy as np
@@ -136,6 +138,12 @@ def _entity_shapes(e) -> list:
         axes = np.array([[np.cos(th), 0, -np.sin(th)], [0, 1, 0], [np.sin(th), 0, np.cos(th)]])
         # p[1] is altitude: +Y is down, so a body flying `alt` metres up has p[1] = -alt.
         # Ground entities carry p[1] == 0 and land exactly where they did before.
+        # Wireframe is the shipped encoding; CWM_SOLID_VEHICLES=1 emits a solid class-10
+        # box instead. The released vehicles ARE solid masses, and a model that has not
+        # been taught the wireframe convention (LynnReal-Omni, zero-shot) renders the
+        # edges literally as yellow metal frames.
+        if os.environ.get("CWM_SOLID_VEHICLES") == "1":
+            return [Box(np.array([p[0], p[1] - half[1], p[2]]), half, axes, class_id=KIND_TO_CLASS["vehicle"])]
         return wireframe_box([p[0], p[1] - half[1], p[2]], half, axes)
     if e.kind == "scenery":
         half = np.asarray(e.size, float) / 2.0
