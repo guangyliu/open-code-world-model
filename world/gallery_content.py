@@ -6,12 +6,12 @@ The identity and setting paragraphs are condensed from the released prompts of t
 examples whose first frames anchor these scenes (Apache-2.0, attributed in NOTICE). The
 geometry, the actions and the camera are ours.
 """
-from world.narrate import (STAND, WALK, JUMP, BOARD, RIDE_VEHICLE, DRIVE, MOUNT, RIDE_MOUNT,
+from world.narrate import (STAND, WALK, JUMP, BOARD, RIDE_VEHICLE, DRIVE, ALIGHT, MOUNT, RIDE_MOUNT,
                            FLY, A_HALT, A_NEAR, A_AWAY, A_DESC, A_FALL, A_CARRY, A_ALONG,
                            PHRASES as _RAIN_PHRASES, OPENING as _RAIN_OPENING)
 
 
-def _phrases(stand, walk, jump, board=None, ride=None, drive=None):
+def _phrases(stand, walk, jump, board=None, ride=None, drive=None, alight=None):
     """Fill the states a scene does not use from the rainkeeper tables so the audit still
     sees every signature exactly once per variant."""
     out = dict(_RAIN_PHRASES)
@@ -19,15 +19,17 @@ def _phrases(stand, walk, jump, board=None, ride=None, drive=None):
     if board: out[BOARD] = board
     if ride: out[RIDE_VEHICLE] = ride
     if drive: out[DRIVE] = drive
+    if alight: out[ALIGHT] = alight
     return out
 
 
-def _opening(place_stand, place_walk, place_jump, board=None, ride=None, drive=None):
+def _opening(place_stand, place_walk, place_jump, board=None, ride=None, drive=None, alight=None):
     out = dict(_RAIN_OPENING)
     out[STAND], out[WALK], out[JUMP] = place_stand, place_walk, place_jump
     if board: out[BOARD] = board
     if ride: out[RIDE_VEHICLE] = ride
     if drive: out[DRIVE] = drive
+    if alight: out[ALIGHT] = alight
     return out
 
 
@@ -84,14 +86,18 @@ BOULEVARD = dict(
               "He remains seated inside the stopped {obj}, its cyan strip glowing"],
         drive=["He rides inside the {obj} as it pulls away up the boulevard",
                "He rides inside the moving {obj}, the ivory walls sliding past its glass",
-               "He rides inside the {obj} while it carries him on toward the residences"]),
+               "He rides inside the {obj} while it carries him on toward the residences"],
+        alight=["He steps out of the halted {obj} onto the asphalt, unfolding his pearl limbs",
+                "He steps out through the open side of the {obj} and stands on the road beside it",
+                "He steps out and leaves the {obj} standing at the kerb behind him"]),
     opening=_opening(
         "At this instant he stands still on {place}",
         "At this instant he is walking away along {place} on foot",
         "At this instant he is in the air above {place}, mid-leap",
         board="At this instant he is climbing in through the open side of the court shuttle on {place}",
         ride="At this instant he sits inside the halted court shuttle on {place}",
-        drive="At this instant he is being carried along {place} inside the moving court shuttle"),
+        drive="At this instant he is being carried along {place} inside the moving court shuttle",
+        alight="At this instant he is stepping out of the halted court shuttle onto {place}"),
     actor_phrase={
         A_HALT: "It stands halted on the asphalt beside him, its door open and its cyan strip lit",
         A_NEAR: "It comes up the boulevard toward him, slowing as it closes on his position",

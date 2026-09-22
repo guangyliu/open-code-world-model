@@ -81,13 +81,38 @@ SCENES = {
                                            subject="courier", radius=4.5))],
             58: [ag.AddRule("board", A.build(A.BOARD_VEHICLE, "board", vehicle="shuttle",
                                              rider="courier", board_s=1.0, seat_frac=0.55))],
-            88: [ag.AddRule("drive", A.build(A.DRIVE_OFF, "drive", vehicle="shuttle",
-                                             rider="courier", v_max=6.0, accel=3.0, seat_frac=0.55))],
+            # The shuttle arrived heading 180 (down the boulevard toward the camera) and
+            # DRIVE_OFF drives along the heading, so without this it carried him back the
+            # way it came, toward the lens, down an empty road: the proxy froze (mean |dz|
+            # 0.001 m/frame) and so did the video. It turns to face up the boulevard first.
+            88: [ag.AddRule("uturn", "def uturn(s):\n    v = s.entities.get('shuttle')\n"
+                                     "    if v is not None and v.attrs.get('boarded'):\n"
+                                     "        v.heading_deg = 0.0\n"),
+                 ag.AddRule("drive", A.build(A.DRIVE_OFF, "drive", vehicle="shuttle",
+                                             rider="courier", v_max=8.0, accel=3.0, seat_frac=0.55))],
+            # Long take only (frames past 124 never run in a one-window take): after ten
+            # seconds of driving the shuttle brakes, he steps out on the right, and walks on.
+            # Every window then has a state change to show, which is what a long take is for.
+            # APPROACH_AND_STOP with sign=-1 is "drive +z until z reaches stop_at, easing
+            # off" with speed = gain * (stop_at - z): gain 2.0 is a 0.5 s time constant, so
+            # from 48.5 m at frame 250 it holds 8 m/s to ~58 m and is under 0.3 m/s by 62 m,
+            # about frame 300. gain 0.9 with stop_at 70 was still doing 2 m/s at the last
+            # frame and the step-out never began.
+            250: [ag.EnableRule("drive", False),
+                  ag.AddRule("brake", A.build(A.APPROACH_AND_STOP, "brake", eid="shuttle", sign=-1.0,
+                                              stop_at=62.0, v_min=0.0, v_max=8.0, gain=2.0))],
+            # `halt` would keep him at speed 0 while within 4.5 m of the shuttle he just
+            # left; it was for waiting for it to arrive and is done.
+            296: [ag.EnableRule("halt", False),
+                  ag.AddRule("alight", A.build(A.ALIGHT, "alight", vehicle="shuttle", rider="courier",
+                                               alight_s=1.0, side=1.0, seat_frac=0.55, walk_speed=1.5))],
         },
-        phases=[narrate.Phase(narrate.DRIVE, "shuttle", "drive_t", None, "court shuttle"),
+        phases=[narrate.Phase(narrate.ALIGHT, "shuttle", "alight_t", None, "court shuttle"),
+                narrate.Phase(narrate.DRIVE, "shuttle", "drive_t", None, "court shuttle"),
                 narrate.Phase(narrate.RIDE_VEHICLE, "shuttle", None, "boarded", "court shuttle"),
                 narrate.Phase(narrate.BOARD, "shuttle", "board_t", None, "court shuttle")],
-        mounts=lambda k: {"courier": Mount("shuttle", 0.55, 86)} if k >= 58 else {},
+        mounts=lambda k: {"courier": Mount("shuttle", 0.55, 86)} if 58 <= k < 296 else {},
+        flying=lambda k: {"courier"} if 296 <= k < 348 else set(),      # stepping out
         visible={"shuttle": (0, FRAMES - 1), "courier": (0, FRAMES - 1)},
     ),
     # 2. Run up the shoulder; a wagon comes down the causeway on the right and passes; the
@@ -203,8 +228,18 @@ def _hook(name: str, s: WorldState, spec: StreetSpec) -> None:
         s.add(_extra("carriage", "vehicle", [-3.2, 0.0, 22.0], [2.4, 2.4, 6.0], 0.0))
         for k, z in enumerate((16.0, 24.0, 31.0)):
             s.add(_person(f"android{k}", [8.2, 0.0, z]))
-        for k in range(4):                       # garden walls along the right sidewalk
-            s.add(_extra(f"wall{k}", "scenery", [11.5, 0.0, 10.0 + 30.0 * k], [1.0, 3.0, 26.0]))
+        # What makes forward motion visible from a car: things beside the road that pass.
+        # A follow camera on a car down an empty straight road renders an almost frozen
+        # proxy (mean |dz| 0.001 m/frame over a window) and the video model froze with it.
+        for k in range(14):                      # garden walls along both sidewalks
+            s.add(_extra(f"wallR{k}", "scenery", [11.5, 0.0, 10.0 + 30.0 * k], [1.0, 3.0, 26.0]))
+            s.add(_extra(f"wallL{k}", "scenery", [-11.5, 0.0, 25.0 + 30.0 * k], [1.0, 3.0, 22.0]))
+        for k in range(26):                      # parked vehicles along the right kerb
+            s.add(_extra(f"parked{k}", "vehicle", [6.4, 0.0, 40.0 + 15.0 * k + (k % 3) * 2.0],
+                         [1.9, 1.5, 4.4], 0.0))
+        for k in range(28):                      # lamp posts, both kerbs
+            s.add(_extra(f"lampR{k}", "scenery", [8.6, 0.0, 12.0 + 15.0 * k], [0.35, 6.0, 0.35]))
+            s.add(_extra(f"lampL{k}", "scenery", [-8.6, 0.0, 19.0 + 15.0 * k], [0.35, 6.0, 0.35]))
     elif name == "causeway":
         for side, x in ((-1, -9.5), (1, 11.0)):  # low parapets
             s.add(_extra(f"parapet{side:+d}", "scenery", [x, 0.0, 120.0], [0.6, 0.9, 240.0]))
@@ -274,6 +309,8 @@ def simulate(name: str, check: bool = True):
     for k in range(FRAMES):
         if k in S:
             active = ag.apply(s, S[k], active, ruleset)
+            if "brake" in active and "shuttle" in s.entities:
+                s.entities["shuttle"].attrs.pop("drive_t", None)     # DRIVE phase ends with the drive rule
         if pause:
             if pause[0] <= k < pause[1]:
                 h.speed = 0.0
@@ -302,7 +339,8 @@ def simulate(name: str, check: bool = True):
         cam = ctl.update(h.pos, h.heading_deg, 1.0 / FPS)
         if check:
             mounts = sc["mounts"](k) if "mounts" in sc else {}
-            inv.check(s, cam, k, mounts=mounts, flying=({"courier"} if airborne else set()))
+            fly = ({"courier"} if airborne else set()) | (sc["flying"](k) if "flying" in sc else set())
+            inv.check(s, cam, k, mounts=mounts, flying=fly)
         plan.append((k, s.to_json(), (cam.focal_px, tuple(float(x) for x in cam.position),
                                       cam.pitch_deg, cam.yaw_deg, cam.roll_deg)))
     if check:
