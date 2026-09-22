@@ -439,10 +439,13 @@ def window_caption(track, plan, w: int, content: dict, n_segments: int = SEGMENT
     opening = content.get("opening", OPENING)
     states = window_states(track, w, n_segments)
     actions = []
-    for state, obj, frac in states:
+    for i, (state, obj, frac) in enumerate(states):
         variants = phrases[state]
-        actions.append(variants[min(int(frac * len(variants)), len(variants) - 1)]
-                       .format(obj=obj))
+        # Progress through the run picks the base variant (a state has a beginning, a
+        # middle and an end); the segment index then rotates it, so a state that lasts a
+        # whole window reads as several sentences instead of the same one repeated.
+        base = min(int(frac * len(variants)), len(variants) - 1)
+        actions.append(variants[(base + i) % len(variants)].format(obj=obj))
     camera = (content.get("camera_flight", CAMERA_FLIGHT)
               if any(st == FLY for st, _, _ in states) else content.get("camera_ground", CAMERA_GROUND))
     cap = Caption(

@@ -149,6 +149,12 @@ def main() -> int:
     ap.add_argument("--window", type=int, default=0)
     ap.add_argument("--steps", type=int, default=20)
     ap.add_argument("--seed", type=int, default=9942001)
+    # Every window used to draw its noise from the same seed. With a proxy that barely
+    # changes between windows and a caption that repeats, that made a 4-window take nearly
+    # periodic at the 90-frame stride (frame k vs k-90 differed by 7.9 grey levels where
+    # k vs k-45 differed by 18). Window w now seeds at seed + w * step; step 0 restores
+    # the old behaviour.
+    ap.add_argument("--window-seed-step", type=int, default=1)
     ap.add_argument("--frames", type=int, default=124)
     ap.add_argument("--height", type=int, default=768)
     ap.add_argument("--width", type=int, default=1344)
@@ -573,7 +579,7 @@ def main() -> int:
             state = pipe(prompt=caption, references=refs, num_frames=a.frames,
                          height=a.height, width=a.width, num_inference_steps=a.steps,
                          output_type="latent",
-                         generator=torch.Generator("cpu").manual_seed(a.seed))
+                         generator=torch.Generator("cpu").manual_seed(a.seed + w * a.window_seed_step))
             torch.cuda.synchronize()
             dt = time.time() - t0
             log(f"[{dt:.0f}s] window {w} denoise done ({dt/max(a.steps,1):.1f}s/step)")
@@ -606,7 +612,7 @@ def main() -> int:
                 raise RuntimeError(f"decode failed: {r.get('error')}")
             (out_dir / f"{tag}.json").write_text(json.dumps(
                 {"source": src, "example": a.example, "window": w, "steps": a.steps,
-                 "seed": a.seed, "frames": a.frames, "size": [a.width, a.height],
+                 "seed": a.seed + w * a.window_seed_step, "frames": a.frames, "size": [a.width, a.height],
                  "lora": not a.no_lora, "world": world, "denoise_s": round(dt, 1)}, indent=1))
             print(f"WROTE {out_path}", flush=True)
 
