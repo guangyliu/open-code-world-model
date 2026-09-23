@@ -91,8 +91,15 @@ CHUNK_RUNS = [
     ("_flash_3_lightvae", "FlashAttention-3, lightweight VAE"),
     ("fa3_pin_nostage", "FlashAttention-3, nothing staged, text encoder pinned on the GPU"),
     ("fa3_pin_nostage_lightvae", "same, lightweight VAE"),
+    ("fa3_pin_nostage_textonly", "same, Qwen vision blocks dropped from the text context (946 rows instead of 8692)"),
+    ("hist22", "same as pinned, plus the release's bounded FramePack latent history"),
+    ("c39", "pinned, 39-frame chunks"),
+    ("c56", "pinned, 56-frame chunks"),
+    ("single124", "no chunking: the whole 124 frames in one call"),
 ]
-CHUNK_VIDEOS = ["auto", "fa3_pin_nostage"]
+CHUNK_VIDEOS = ["auto", "fa3_pin_nostage", "hist22", "c56", "single124"]
+VIDEO_LABEL = {"auto": "22-frame chunks, as released", "fa3_pin_nostage": "22-frame chunks, nothing staged (same frames as released, faster)",
+               "hist22": "22-frame chunks + latent history", "c56": "56-frame chunks", "single124": "no chunking, 124 frames in one call"}
 
 
 def chunk_section(runs, proxy, dst):
@@ -105,11 +112,14 @@ def chunk_section(runs, proxy, dst):
         ch = t["chunks"][1:] or t["chunks"]
         med = lambda k: sorted(c[k] for c in ch)[len(ch) // 2]
         new = ch[0]["new_frames"]
-        rows.append(f"<tr><td>{label}</td><td>{med('conditioning_s'):.1f}</td><td>{med('generate_s'):.1f}</td><td>{med('dit_s'):.1f}</td>"
-                    f"<td>{med('decode_s'):.2f}</td><td>{max(c['peak_gb'] for c in ch):.0f}</td><td>{(med('conditioning_s') + med('generate_s')) / (new / 24):.0f}×</td></tr>")
+        # A single call has no warm chunk to take the median of; its first-call conditioning number
+        # includes staging the text encoder, so use the measured VLM forward instead.
+        cond = med("vlm_forward_s") if len(t["chunks"]) == 1 and "vlm_forward_s" in ch[0] else med("conditioning_s")
+        rows.append(f"<tr><td>{label}</td><td>{cond:.1f}</td><td>{med('generate_s'):.1f}</td><td>{med('dit_s'):.1f}</td>"
+                    f"<td>{med('decode_s'):.2f}</td><td>{max(c['peak_gb'] for c in ch):.0f}</td><td>{(cond + med('generate_s')) / (new / 24):.0f}×</td></tr>")
         if tag in CHUNK_VIDEOS:
             transcode(f"{runs}/boulevard_540_{tag}/take.mp4", f"{dst}/video/chunked_{tag}.mp4")
-            have[tag] = label
+            have[tag] = VIDEO_LABEL.get(tag, label)
     if not rows:
         return ""
     if proxy:
@@ -119,10 +129,10 @@ def chunk_section(runs, proxy, dst):
         vids.insert(0, '<figure><video controls muted loop playsinline preload="metadata" src="video/chunked_proxy.mp4"></video><figcaption>the control video: our proxy as a flat-shaded game render, 960×544, cut into 22-frame chunks with a 21-frame stride</figcaption></figure>')
     return f"""<h2 class="part">Streaming, chunk by chunk</h2>
 <section class="scene" id="chunked">
-<header><h2>Boulevard, 540p, six chunks of 22 frames</h2><p class="blurb">The release has no entry that takes a frame-aligned control and streams, so this borrows its anchored structure-edit recipe: each chunk is a video-edit conditioned on the anchor and that chunk's proxy, with the last frame of the previous chunk pinned into the first latent slot. 21 new frames (0.88 s) per chunk, four denoiser steps, one H200, one resident process. Seams are as continuous as the frames inside a chunk; what drifts is texture, the road coarsening chunk by chunk because only one frame carries over.</p></header>
+<header><h2>Boulevard, 540p, six chunks of 22 frames</h2><p class="blurb">The release has no entry that takes a frame-aligned control and streams, so this borrows its anchored structure-edit recipe: each chunk is a video-edit conditioned on the anchor and that chunk's proxy, with the last frame of the previous chunk pinned into the first latent slot. 21 new frames (0.88 s) per chunk, four denoiser steps, one H200, one resident process. Seams are as continuous as the frames inside a chunk; what drifts is texture: the road coarsens chunk by chunk because each chunk restarts from one frame. Carrying the release's latent history softens it; longer chunks nearly remove it, and one 124-frame call is both the cleanest and, per frame, the fastest.</p></header>
 <div class="row">{''.join(vids)}</div>
 <table class="timing"><thead><tr><th>configuration</th><th>conditioning s</th><th>generate s</th><th>of which DiT (4 steps)</th><th>decode s</th><th>peak GB</th><th>× slower than real time</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
-<p class="meta">medians over chunks 1–5. Conditioning is the Qwen3-VL-32B text encoder reading the prompt, the anchor and the chunk's proxy; as released it is moved CPU→GPU→CPU every chunk. The staged runs move eight DiT blocks and the VAE decoder around every VAE phase. Pinning both on a 141 GB card removes 60 s per chunk; the four DiT steps at 3.35 s each are what is left.</p>
+<p class="meta">medians over the chunks after the first (single-call rows: that one call). Conditioning is the Qwen3-VL-32B text encoder reading the prompt, the anchor and the chunk's proxy; as released it is moved CPU→GPU→CPU every chunk. The staged runs move eight DiT blocks and the VAE decoder around every VAE phase. Pinning both on a 141 GB card removes 60 s per chunk; the four DiT steps at 3.35 s each are what is left.</p>
 </section>"""
 
 
