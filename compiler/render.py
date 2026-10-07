@@ -72,6 +72,11 @@ class Primitive:
         """Bounding sphere (centre, radius), or None for unbounded shapes."""
         return None
 
+    def surface_normal(self, hit: np.ndarray) -> np.ndarray:
+        """Outward surface normal at points `hit` (..., 3) known to lie on this shape.
+        Unnormalised is fine; `render_clay` normalises and faces it to the camera."""
+        raise NotImplementedError
+
 
 @dataclass
 class Plane(Primitive):
@@ -94,6 +99,9 @@ class Plane(Primitive):
 
     def bound(self):
         return None if self.radius is None else (np.asarray(self.point, float), float(self.radius))
+
+    def surface_normal(self, hit):
+        return np.broadcast_to(np.asarray(self.normal, float), hit.shape)
 
 
 @dataclass
@@ -126,6 +134,9 @@ class Rect(Primitive):
         r = float(np.hypot(self.x1 - self.x0, self.z1 - self.z0) / 2.0)
         return c, max(r, 1e-6)
 
+    def surface_normal(self, hit):
+        return np.broadcast_to(np.array([0.0, -1.0, 0.0]), hit.shape)
+
 
 @dataclass
 class Sphere(Primitive):
@@ -152,6 +163,10 @@ class Sphere(Primitive):
     def bound(self):
         s = 1.0 if self.scale is None else float(np.max(self.scale))
         return np.asarray(self.centre, float), float(self.radius) * s
+
+    def surface_normal(self, hit):
+        s = np.ones(3) if self.scale is None else np.asarray(self.scale, float)
+        return (hit - self.centre) / (s * s)
 
 
 @dataclass
@@ -197,6 +212,11 @@ class Capsule(Primitive):
         a, b = np.asarray(self.a, float), np.asarray(self.b, float)
         return (a + b) / 2.0, float(np.linalg.norm(b - a) / 2.0 + self.radius)
 
+    def surface_normal(self, hit):
+        a, ba = np.asarray(self.a, float), np.asarray(self.b, float) - np.asarray(self.a, float)
+        h = np.clip(((hit - a) @ ba) / max(float(ba @ ba), 1e-12), 0.0, 1.0)
+        return hit - (a + h[..., None] * ba)
+
 
 @dataclass
 class Box(Primitive):
@@ -220,6 +240,12 @@ class Box(Primitive):
 
     def bound(self):
         return np.asarray(self.centre, float), float(np.linalg.norm(np.abs(self.half) @ np.abs(self.axes)))
+
+    def surface_normal(self, hit):
+        local = ((hit - self.centre) @ self.axes.T) / np.maximum(np.abs(self.half), 1e-9)
+        k = np.argmax(np.abs(local), axis=-1)
+        sign = np.sign(np.take_along_axis(local, k[..., None], -1))
+        return sign * self.axes[k]
 
 
 @dataclass
@@ -252,6 +278,11 @@ class SphereCluster(Primitive):
     def bound(self):
         c = self.centres.mean(0)
         return c, float(np.max(np.linalg.norm(self.centres - c, axis=1) + self.radii))
+
+    def surface_normal(self, hit):
+        off = hit[..., None, :] - self.centres                    # (..., n, 3)
+        k = np.argmin(np.abs(np.linalg.norm(off, axis=-1) - self.radii), axis=-1)
+        return np.take_along_axis(off, k[..., None, None], -2)[..., 0, :]
 
 
 def wireframe_box(centre, half, axes=None, *, bar_ratio: float = 0.060, class_id: int = 10):
@@ -328,10 +359,21 @@ def screen_bbox(camera: Camera, centre: np.ndarray, radius: float, width: int, h
 
 
 def _render(camera, prims, width, height, cull=True):
+    best, ids, _, _, d, fwd = _trace(camera, prims, width, height, cull)
+    z = best * (d @ fwd)                    # euclidean t -> z along the optical axis
+    hit = np.isfinite(best)
+    z = np.where(hit, z, 0.0).astype(np.float32)
+    ids = np.where(hit, ids, np.uint8(1)).astype(np.uint8)   # misses are sky
+    return z, ids
+
+
+def _trace(camera, prims, width, height, cull=True):
+    """Ray distance, class id and index of the winning primitive (into `order`) per pixel."""
     d, fwd = camera.rays(width, height)
     o = camera.position
     best = np.full((height, width), MISS)
     ids = np.zeros((height, width), np.uint8)
+    pid = np.full((height, width), -1, np.int32)
     # Near-plane clip. Intersections are accepted at t > 1e-4, which is a z-depth of
     # ~8e-5 m -- below the 0.001 m the released format treats as invalid, so a camera that
     # grazes or enters a primitive would emit "not sky but zero depth" and break the
@@ -347,7 +389,7 @@ def _render(camera, prims, width, height, cull=True):
             return -np.inf if b is None else float(np.linalg.norm(b[0] - o) - b[1])
         order = sorted(prims, key=key)
 
-    for p in order:
+    for n, p in enumerate(order):
         b = p.bound() if cull else None
         box = None
         near_bound = 0.0
@@ -369,16 +411,14 @@ def _render(camera, prims, width, height, cull=True):
             closer = (t < view) & (t > t_near[y0:y1, x0:x1])
             view[closer] = t[closer]
             ids[y0:y1, x0:x1][closer] = np.uint8(p.class_id)
+            pid[y0:y1, x0:x1][closer] = n
             continue
         t = p.intersect(o, d)
         closer = (t < best) & (t > t_near)
         best = np.where(closer, t, best)
         ids = np.where(closer, np.uint8(p.class_id), ids)
-    z = best * (d @ fwd)                    # euclidean t -> z along the optical axis
-    hit = np.isfinite(best)
-    z = np.where(hit, z, 0.0).astype(np.float32)
-    ids = np.where(hit, ids, np.uint8(1)).astype(np.uint8)   # misses are sky
-    return z, ids
+        pid = np.where(closer, n, pid)
+    return best, ids, pid, order, d, fwd
 
 
 def pool(z: np.ndarray, ids: np.ndarray):
@@ -494,6 +534,79 @@ def render_frame(camera: Camera, prims: list[Primitive], *, cull: bool = True,
     if family != "metric":
         raise ValueError(f"unknown condition family {family!r}; use 'metric' or 'gray16'")
     return pool(z, ids)
+
+
+# --------------------------------------------------------------- the clay family
+#
+# LTX-2.5's Layout-To-Render IC-LoRA does not read depth or class ids. Its control signal
+# is a grey viewport playblast: untextured geometry under a studio light, the kind a
+# Blender solid-mode render produces. So this channel carries shape and placement only;
+# what a surface IS has to come from the first frame and the prompt.
+
+CLAY_SKY = 0.55        # flat background, between the lit and shadowed faces
+CLAY_FOG_M = 180.0     # e-folding distance of the fade toward the background
+# Camera-relative studio light (x right, y down, z forward): a key from upper left and in
+# front of the subject, and a weaker fill from the right. Camera-relative, as in a viewport,
+# so a surface's shade changes only when it turns, never because the camera moved.
+_KEY = np.array([-0.45, -0.65, -0.60]) / np.linalg.norm([-0.45, -0.65, -0.60])
+_FILL = np.array([0.70, -0.15, -0.70]) / np.linalg.norm([0.70, -0.15, -0.70])
+
+
+def render_clay(camera: Camera, prims: list[Primitive], *, width: int, height: int,
+                supersample: int = 2, outline: float = 0.35, cull: bool = True) -> np.ndarray:
+    """Grey clay frame, uint8 (height, width, 3).
+
+    Rendered at `supersample` x and box-filtered down, so silhouettes are antialiased the
+    way a viewport capture is. `outline` darkens pixels at a depth break: two boxes facing
+    the camera at different distances shade identically, and without an edge they read as
+    one surface.
+    """
+    dist, nc, hit = clay_surface(camera, prims, width * supersample, height * supersample, cull=cull)
+    return shade_clay(dist, nc, hit, supersample=supersample, outline=outline)
+
+
+def clay_surface(camera: Camera, prims: list[Primitive], width: int, height: int, *, cull: bool = True):
+    """Visible surface per pixel: (ray distance, unit normal in camera axes, hit mask).
+
+    Split from the shading so other geometry -- a point cloud lifted from a photo -- can be
+    z-composited with the primitives before one shared `shade_clay` pass.
+    """
+    with np.errstate(all="ignore"):
+        best, _, pid, order, d, _ = _trace(camera, prims, width, height, cull)
+        hit = np.isfinite(best)
+        pts = camera.position + np.where(hit, best, 0.0)[..., None] * d
+        nrm = np.zeros_like(pts)
+        for k in np.unique(pid[hit]):
+            m = pid == k
+            nrm[m] = order[k].surface_normal(pts[m])
+        nrm /= np.maximum(np.linalg.norm(nrm, axis=-1, keepdims=True), 1e-12)
+        nrm = np.where((np.einsum("...i,...i->...", nrm, d) > 0)[..., None], -nrm, nrm)
+    return np.where(hit, best, np.inf), nrm @ camera.basis().T, hit
+
+
+def shade_clay(dist: np.ndarray, nc: np.ndarray, hit: np.ndarray, *, supersample: int = 2,
+               outline: float = 0.35) -> np.ndarray:
+    """Studio-lit grey from distance + camera-axis normals, box-filtered by `supersample`."""
+    with np.errstate(all="ignore"):
+        shade = 0.22 + 0.62 * np.clip(nc @ _KEY, 0, 1) + 0.22 * np.clip(nc @ _FILL, 0, 1)
+        fog = 1.0 - np.exp(-np.where(hit, dist, 0.0) / CLAY_FOG_M)
+        img = np.where(hit, shade * (1 - fog) + CLAY_SKY * fog, CLAY_SKY)
+        if outline > 0:
+            r = np.where(hit, dist, 1e4)
+            edge = np.zeros_like(hit)
+            for ax in (0, 1):
+                a, b = np.take(r, range(r.shape[ax] - 1), ax), np.take(r, range(1, r.shape[ax]), ax)
+                brk = np.abs(np.log(a / b)) > 0.08
+                pad = [(0, 0), (0, 0)]
+                pad[ax] = (0, 1)
+                edge |= np.pad(brk & (a < b), pad)            # mark the nearer side only
+                pad[ax] = (1, 0)
+                edge |= np.pad(brk & (b < a), pad)
+            img = np.where(edge, img * (1 - outline), img)
+    h, w = img.shape[0] // supersample, img.shape[1] // supersample
+    img = img.reshape(h, supersample, w, supersample).mean((1, 3))
+    g = np.clip(np.round(img * 255), 0, 255).astype(np.uint8)
+    return np.repeat(g[..., None], 3, axis=-1)
 
 
 def vegetation_clump(centre, radius: float, *, aspect: float = 1.0, lobes: int = 18,
