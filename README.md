@@ -13,9 +13,9 @@
 
 <br>
 
-![boulevard: our proxy, MiniMax-H3 + CWM LoRA, LynnReal-Omni](docs/gif/hero_boulevard.gif)
+![stream: our proxy, MiniMax-H3 + CWM LoRA, LynnReal-Omni](docs/gif/hero_stream.gif)
 
-<div align="center"><sub>One scene, authored in code: he walks up the boulevard, a shuttle halts beside him, he climbs in, it drives off. Left: the proxy this repository renders. Middle: MiniMax-H3 with the CWM LoRA reading it. Right: LynnReal-Omni reading the same proxy zero-shot.</sub></div>
+<div align="center"><sub>One scene, authored in code: he runs along the water's edge, then breaks right; the follow camera swings round behind him and the river leaves the frame. Left: the proxy this repository renders. Middle: MiniMax-H3 with the CWM LoRA reading it. Right: LynnReal-Omni reading the same proxy zero-shot.</sub></div>
 
 ---
 
