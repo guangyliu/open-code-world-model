@@ -135,20 +135,6 @@ Built on [Code World Model](https://github.com/buaacyw/code-world-model) and Min
 ## 📖 Citation
 
 ```bibtex
-@article{chen2026cwm,
-  title   = {Code World Model: Coding Agent as World Brain},
-  author  = {Chen, Yiwen and Lin, Guosheng and Zhang, Chi},
-  journal = {arXiv preprint arXiv:2608.25927},
-  year    = {2026}
-}
-
-@misc{liu2026ocwm,
-  title        = {Open Code World Model: a proxy generator for Code World Model},
-  author       = {Liu, Guangyi},
-  year         = {2026},
-  howpublished = {\url{https://github.com/guangyliu/open-code-world-model}}
-}
-
 @misc{liao2026streamingcwm,
   title        = {Streaming Code World Model},
   author       = {Liao, Tingting and Liu, Guangyi},
